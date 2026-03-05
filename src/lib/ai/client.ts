@@ -11,9 +11,18 @@ function createClient(): Anthropic {
   return new Anthropic({ apiKey });
 }
 
-export const anthropic = globalForAnthropic.anthropic ?? createClient();
+function getClient(): Anthropic {
+  if (!globalForAnthropic.anthropic) {
+    globalForAnthropic.anthropic = createClient();
+  }
+  return globalForAnthropic.anthropic;
+}
 
-if (process.env.NODE_ENV !== 'production') globalForAnthropic.anthropic = anthropic;
+export const anthropic = new Proxy({} as Anthropic, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getClient(), prop, receiver);
+  },
+});
 
 export const AI_MODEL = 'claude-sonnet-4-20250514';
 

@@ -9,3 +9,6 @@ dist/
 coverage/
 .vercel/
 src-tauri/target/
+
+# Local Netlify folder
+.netlify

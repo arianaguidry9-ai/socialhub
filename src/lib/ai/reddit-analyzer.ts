@@ -4,6 +4,7 @@ import { RedditConnector } from '@/lib/connectors/reddit';
 import { decrypt } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import type { SubredditRuleAnalysis, PlatformTokens } from '@/types';
+import type Anthropic from '@anthropic-ai/sdk';
 
 const redditConnector = new RedditConnector();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours

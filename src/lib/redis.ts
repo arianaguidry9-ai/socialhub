@@ -16,6 +16,15 @@ function createRedisClient(): Redis {
   return client;
 }
 
-export const redis = globalForRedis.redis ?? createRedisClient();
+function getRedis(): Redis {
+  if (!globalForRedis.redis) {
+    globalForRedis.redis = createRedisClient();
+  }
+  return globalForRedis.redis;
+}
 
-if (process.env.NODE_ENV !== 'production') globalForRedis.redis = redis;
+export const redis = new Proxy({} as Redis, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getRedis(), prop, receiver);
+  },
+});

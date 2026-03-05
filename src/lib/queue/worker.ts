@@ -1,4 +1,4 @@
-import { Worker, type Job } from 'bullmq';
+import { Worker, type Job, type ConnectionOptions } from 'bullmq';
 import { redis } from '@/lib/redis';
 import { prisma } from '@/lib/db';
 import { getConnector } from '@/lib/connectors';
@@ -112,7 +112,7 @@ const publishWorker = new Worker(
     }
   },
   {
-    connection: redis,
+    connection: redis as unknown as ConnectionOptions,
     concurrency: 5,
     limiter: { max: 10, duration: 60000 }, // 10 posts per minute globally
   }
@@ -197,7 +197,7 @@ const metricsFetchWorker = new Worker(
     logger.info({ postTargetId, metrics }, 'Metrics fetched and stored');
   },
   {
-    connection: redis,
+    connection: redis as unknown as ConnectionOptions,
     concurrency: 10,
   }
 );
@@ -240,7 +240,7 @@ const emailWorker = new Worker(
     }
   },
   {
-    connection: redis,
+    connection: redis as unknown as ConnectionOptions,
     concurrency: 3,
   }
 );
@@ -279,7 +279,7 @@ const tokenRefreshWorker = new Worker(
     logger.info({ socialAccountId, platform: account.platform }, 'Token refreshed');
   },
   {
-    connection: redis,
+    connection: redis as unknown as ConnectionOptions,
     concurrency: 5,
   }
 );

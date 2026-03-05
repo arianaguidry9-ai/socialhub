@@ -1,61 +1,90 @@
-import { Queue, Worker, type Job } from 'bullmq';
+import { Queue, type ConnectionOptions } from 'bullmq';
 import { redis } from '@/lib/redis';
 import { logger } from '@/lib/logger';
 
 /** BullMQ queue names. */
 export const QUEUE_NAMES = {
-  POST_PUBLISH: 'post:publish',
-  METRICS_FETCH: 'metrics:fetch',
-  TOKEN_REFRESH: 'token:refresh',
-  EMAIL_NOTIFY: 'email:notify',
+  POST_PUBLISH: 'post-publish',
+  METRICS_FETCH: 'metrics-fetch',
+  TOKEN_REFRESH: 'token-refresh',
+  EMAIL_NOTIFY: 'email-notify',
 } as const;
 
-/** Default queue connection config. */
-const connection = { connection: redis };
+/** Default queue connection config (lazy). */
+function getConnection() {
+  return { connection: redis as unknown as ConnectionOptions };
+}
+
+/** Lazy queue singleton cache. */
+const queues: Record<string, Queue> = {};
+
+function getQueue(name: string, opts: Record<string, unknown> = {}): Queue {
+  if (!queues[name]) {
+    queues[name] = new Queue(name, { ...getConnection(), ...opts });
+  }
+  return queues[name];
+}
 
 /** Post publishing queue — processes scheduled posts. */
-export const postPublishQueue = new Queue(QUEUE_NAMES.POST_PUBLISH, {
-  ...connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { count: 1000 },
-    removeOnFail: { count: 5000 },
+export const postPublishQueue = {
+  get queue() {
+    return getQueue(QUEUE_NAMES.POST_PUBLISH, {
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { count: 1000 },
+        removeOnFail: { count: 5000 },
+      },
+    });
   },
-});
+  add: (...args: Parameters<Queue['add']>) => postPublishQueue.queue.add(...args),
+  getJob: (...args: Parameters<Queue['getJob']>) => postPublishQueue.queue.getJob(...args),
+};
 
 /** Metrics fetching queue — fetches engagement metrics periodically. */
-export const metricsFetchQueue = new Queue(QUEUE_NAMES.METRICS_FETCH, {
-  ...connection,
-  defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 10000 },
-    removeOnComplete: { count: 500 },
-    removeOnFail: { count: 1000 },
+export const metricsFetchQueue = {
+  get queue() {
+    return getQueue(QUEUE_NAMES.METRICS_FETCH, {
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: { count: 500 },
+        removeOnFail: { count: 1000 },
+      },
+    });
   },
-});
+  add: (...args: Parameters<Queue['add']>) => metricsFetchQueue.queue.add(...args),
+};
 
 /** Token refresh queue — refreshes expiring OAuth tokens. */
-export const tokenRefreshQueue = new Queue(QUEUE_NAMES.TOKEN_REFRESH, {
-  ...connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 30000 },
-    removeOnComplete: { count: 200 },
-    removeOnFail: { count: 500 },
+export const tokenRefreshQueue = {
+  get queue() {
+    return getQueue(QUEUE_NAMES.TOKEN_REFRESH, {
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30000 },
+        removeOnComplete: { count: 200 },
+        removeOnFail: { count: 500 },
+      },
+    });
   },
-});
+  add: (...args: Parameters<Queue['add']>) => tokenRefreshQueue.queue.add(...args),
+};
 
 /** Email notification queue. */
-export const emailNotifyQueue = new Queue(QUEUE_NAMES.EMAIL_NOTIFY, {
-  ...connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { count: 500 },
-    removeOnFail: { count: 500 },
+export const emailNotifyQueue = {
+  get queue() {
+    return getQueue(QUEUE_NAMES.EMAIL_NOTIFY, {
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { count: 500 },
+        removeOnFail: { count: 500 },
+      },
+    });
   },
-});
+  add: (...args: Parameters<Queue['add']>) => emailNotifyQueue.queue.add(...args),
+};
 
 /**
  * Schedule a post for publishing at a future time.
