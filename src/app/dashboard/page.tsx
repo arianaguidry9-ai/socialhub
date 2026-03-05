@@ -42,7 +42,7 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">Overview of your social media performance</p>
         </div>
-        <Select value={days} onValueChange={setDays} placeholder="Time Period">
+        <Select value={days} onValueChange={setDays} placeholder="Time Period" className="w-[160px]">
           {TIME_PERIODS.map((p) => (
             <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
           ))}

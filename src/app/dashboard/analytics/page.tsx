@@ -70,12 +70,12 @@ export default function AnalyticsPage() {
           <p className="text-muted-foreground">Track your social media performance</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={platform} onValueChange={setPlatform} placeholder="Platform">
+          <Select value={platform} onValueChange={setPlatform} placeholder="Platform" className="w-[170px]">
             {PLATFORM_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
           </Select>
-          <Select value={days} onValueChange={setDays} placeholder="Time period">
+          <Select value={days} onValueChange={setDays} placeholder="Time period" className="w-[160px]">
             {TIME_PERIODS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}

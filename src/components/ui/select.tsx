@@ -32,19 +32,19 @@ export function Select({ value, onValueChange, children, className, placeholder 
   )?.props.children;
 
   return (
-    <div ref={ref} className={cn('relative', className)}>
+    <div ref={ref} className={cn('relative inline-block min-w-[140px]', className)}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+        className="flex h-10 w-full items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
       >
         <span className={selectedLabel ? '' : 'text-muted-foreground'}>
           {selectedLabel || placeholder || 'Select...'}
         </span>
-        <ChevronDown className="h-4 w-4 opacity-50" />
+        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
       </button>
       {open && (
-        <div className="absolute z-[100] mt-1 w-full rounded-lg border bg-popover shadow-xl">
+        <div className="absolute z-[100] mt-1 min-w-full rounded-lg border bg-popover shadow-xl">
           <div className="max-h-60 overflow-auto p-1">
             {options.map((child) => (
               <button
