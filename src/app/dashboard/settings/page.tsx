@@ -4,7 +4,8 @@ import { useSession } from 'next-auth/react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Crown, Check } from 'lucide-react';
+import { Crown, Check, Sun, Moon, Monitor } from 'lucide-react';
+import { useTheme } from '@/components/theme-provider';
 
 const premiumFeatures = [
   'Unlimited social accounts',
@@ -19,6 +20,7 @@ const premiumFeatures = [
 export default function SettingsPage() {
   const { data: session } = useSession();
   const plan = (session?.user as any)?.plan || 'FREE';
+  const { theme, setTheme } = useTheme();
 
   const handleUpgrade = async () => {
     const res = await fetch('/api/stripe/checkout', { method: 'POST' });
@@ -34,6 +36,36 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-muted-foreground">Manage your account and subscription</p>
       </div>
+
+      {/* Appearance */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Choose your preferred theme</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3">
+            {([
+              { value: 'light' as const, label: 'Light', icon: Sun },
+              { value: 'dark' as const, label: 'Dark', icon: Moon },
+              { value: 'system' as const, label: 'System', icon: Monitor },
+            ]).map(({ value, label, icon: Icon }) => (
+              <button
+                key={value}
+                onClick={() => setTheme(value)}
+                className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all ${
+                  theme === value
+                    ? 'glass border-primary/50 shadow-lg shadow-primary/10'
+                    : 'border-transparent bg-white/20 hover:bg-white/40 dark:bg-white/5 dark:hover:bg-white/10'
+                }`}
+              >
+                <Icon className="h-6 w-6" />
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Plan */}
       <Card>
@@ -52,7 +84,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           {plan !== 'PREMIUM' && (
-            <div className="rounded-lg border bg-gradient-to-br from-blue-50 to-purple-50 p-6">
+            <div className="rounded-lg border bg-gradient-to-br from-blue-50 to-purple-50 p-6 dark:from-blue-950/30 dark:to-purple-950/30">
               <div className="mb-4 flex items-center gap-2">
                 <Crown className="h-6 w-6 text-amber-500" />
                 <h3 className="text-xl font-bold">Premium Plan</h3>

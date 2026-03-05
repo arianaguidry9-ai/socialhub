@@ -28,22 +28,42 @@ export async function GET(req: NextRequest) {
         period: { startDate, endDate, days: 30 },
         overview: { totalPosts: 42, totalImpressions: 18_400, totalEngagement: 3_210, avgEngagementRate: 0.174 },
         recentPosts: [],
-        heatmap: Array.from({ length: 7 }, (_, day) =>
-          Array.from({ length: 24 }, (_, hour) => ({ day, hour, count: Math.floor(Math.random() * 5) }))
-        ).flat(),
+        heatmap: ['twitter', 'reddit', 'linkedin'].flatMap((plat) =>
+          Array.from({ length: 7 }, (_, day) =>
+            Array.from({ length: 24 }, (_, hour) => ({
+              dayOfWeek: day,
+              hour,
+              avgEngagement: Math.floor(Math.random() * 50),
+              platform: plat,
+            }))
+          ).flat()
+        ),
         contentTypes: [
-          { type: 'text', count: 20, avgEngagement: 85 },
-          { type: 'link', count: 15, avgEngagement: 120 },
-          { type: 'image', count: 7, avgEngagement: 210 },
+          { type: 'text', count: 20, avgEngagement: 85, platform: 'twitter' },
+          { type: 'link', count: 15, avgEngagement: 120, platform: 'twitter' },
+          { type: 'image', count: 7, avgEngagement: 210, platform: 'twitter' },
+          { type: 'text', count: 10, avgEngagement: 65, platform: 'reddit' },
+          { type: 'link', count: 22, avgEngagement: 180, platform: 'reddit' },
+          { type: 'image', count: 4, avgEngagement: 95, platform: 'linkedin' },
+          { type: 'text', count: 8, avgEngagement: 55, platform: 'linkedin' },
         ],
         platforms: [
-          { platform: 'twitter', posts: 18, impressions: 8200, engagement: 1400 },
-          { platform: 'reddit', posts: 14, impressions: 6800, engagement: 1200 },
-          { platform: 'linkedin', posts: 10, impressions: 3400, engagement: 610 },
+          { platform: 'twitter', posts: 18, impressions: 8200, engagement: 1400, avgEngagement: 78, avgImpressions: 456 },
+          { platform: 'reddit', posts: 14, impressions: 6800, engagement: 1200, avgEngagement: 86, avgImpressions: 486 },
+          { platform: 'linkedin', posts: 10, impressions: 3400, engagement: 610, avgEngagement: 61, avgImpressions: 340 },
         ],
         hashtags: [
-          { tag: '#webdev', count: 12 }, { tag: '#javascript', count: 9 },
-          { tag: '#ai', count: 7 }, { tag: '#startup', count: 5 }, { tag: '#oss', count: 4 },
+          { tag: '#webdev', count: 12, avgEngagement: 92, platform: 'twitter' },
+          { tag: '#javascript', count: 9, avgEngagement: 78, platform: 'twitter' },
+          { tag: '#ai', count: 7, avgEngagement: 104, platform: 'linkedin' },
+          { tag: '#startup', count: 5, avgEngagement: 66, platform: 'linkedin' },
+          { tag: '#oss', count: 4, avgEngagement: 53, platform: 'twitter' },
+        ],
+        flairs: [
+          { flair: 'Discussion', count: 8, avgEngagement: 130, platform: 'reddit' },
+          { flair: 'Show & Tell', count: 6, avgEngagement: 210, platform: 'reddit' },
+          { flair: 'Question', count: 5, avgEngagement: 95, platform: 'reddit' },
+          { flair: 'Resource', count: 4, avgEngagement: 78, platform: 'reddit' },
         ],
         maxDaysAllowed: 1825,
       });

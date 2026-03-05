@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogClose } from '@/components/ui/dialog';
 
 const statusColors: Record<string, string> = {
   DRAFT: 'secondary',
@@ -14,6 +15,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function QueuePage() {
+  const [selectedPost, setSelectedPost] = useState<any>(null);
+
   const { data, isLoading } = useQuery({
     queryKey: ['posts', 'queue'],
     queryFn: async () => {
@@ -34,7 +37,11 @@ export default function QueuePage() {
         <p className="py-8 text-center text-muted-foreground">No posts here</p>
       ) : (
         items.map((post: any) => (
-          <div key={post.id} className="flex items-start justify-between rounded-lg border p-4">
+          <button
+            key={post.id}
+            className="flex w-full items-start justify-between rounded-lg border p-4 text-left transition-colors hover:bg-accent"
+            onClick={() => setSelectedPost(post)}
+          >
             <div className="flex-1">
               <p className="font-medium">
                 {post.title || post.content?.substring(0, 100) || 'Untitled'}
@@ -63,7 +70,7 @@ export default function QueuePage() {
             <Badge variant={statusColors[post.status] as any || 'secondary'}>
               {post.status}
             </Badge>
-          </div>
+          </button>
         ))
       )}
     </div>
@@ -97,6 +104,99 @@ export default function QueuePage() {
         <TabsContent value="published"><PostList items={published} /></TabsContent>
         <TabsContent value="failed"><PostList items={failed} /></TabsContent>
       </Tabs>
+
+      {/* Post Preview Dialog */}
+      <Dialog open={!!selectedPost} onOpenChange={() => setSelectedPost(null)}>
+        <DialogClose onClose={() => setSelectedPost(null)} />
+        <DialogHeader>
+          <DialogTitle>Post Preview</DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          {selectedPost && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Badge variant={statusColors[selectedPost.status] as any || 'secondary'}>
+                  {selectedPost.status}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Created: {new Date(selectedPost.createdAt).toLocaleString()}
+                </span>
+              </div>
+
+              {selectedPost.title && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Title</p>
+                  <p className="text-lg font-semibold">{selectedPost.title}</p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Content</p>
+                <div className="mt-1 whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-sm">
+                  {selectedPost.content || 'No content'}
+                </div>
+              </div>
+
+              {selectedPost.mediaUrls?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Media</p>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    {selectedPost.mediaUrls.map((url: string, i: number) => (
+                      <div key={i} className="overflow-hidden rounded-md border">
+                        {url.match(/\.(mp4|webm|mov)$/i) ? (
+                          <video src={url} controls className="w-full" />
+                        ) : url.includes('redgifs.com') ? (
+                          <a href={url} target="_blank" rel="noopener noreferrer" className="flex h-24 items-center justify-center bg-muted text-xs text-muted-foreground hover:underline">
+                            RedGifs Link
+                          </a>
+                        ) : (
+                          <img src={url} alt="" className="w-full object-cover" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedPost.scheduledAt && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Scheduled For</p>
+                  <p className="text-sm">{new Date(selectedPost.scheduledAt).toLocaleString()}</p>
+                </div>
+              )}
+
+              {selectedPost.publishedAt && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Published At</p>
+                  <p className="text-sm">{new Date(selectedPost.publishedAt).toLocaleString()}</p>
+                </div>
+              )}
+
+              {selectedPost.errorMessage && (
+                <div>
+                  <p className="text-xs font-medium text-destructive">Error</p>
+                  <p className="text-sm text-destructive">{selectedPost.errorMessage}</p>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Platforms</p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {selectedPost.targets?.length > 0 ? (
+                    selectedPost.targets.map((t: any) => (
+                      <Badge key={t.id} variant="outline">
+                        {t.socialAccount?.platform} — {t.socialAccount?.username}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No platforms selected</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

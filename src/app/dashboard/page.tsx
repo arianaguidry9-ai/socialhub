@@ -1,36 +1,52 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectItem } from '@/components/ui/select';
 import { BarChart3, Calendar, TrendingUp, Users } from 'lucide-react';
 
-async function fetchDashboard() {
-  const [analyticsRes, postsRes, accountsRes] = await Promise.all([
-    fetch('/api/analytics?days=30'),
-    fetch('/api/posts?limit=5'),
-    fetch('/api/accounts/link'),
-  ]);
-  return {
-    analytics: await analyticsRes.json(),
-    posts: await postsRes.json(),
-    accounts: await accountsRes.json(),
-  };
-}
+const TIME_PERIODS = [
+  { label: '24 Hours', value: '1' },
+  { label: '7 Days', value: '7' },
+  { label: '30 Days', value: '30' },
+  { label: '1 Year', value: '365' },
+];
 
 export default function DashboardPage() {
+  const [days, setDays] = useState('30');
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: fetchDashboard,
+    queryKey: ['dashboard', days],
+    queryFn: async () => {
+      const [analyticsRes, postsRes, accountsRes] = await Promise.all([
+        fetch(`/api/analytics?days=${days}`),
+        fetch('/api/posts?limit=5'),
+        fetch('/api/accounts/link'),
+      ]);
+      return {
+        analytics: await analyticsRes.json(),
+        posts: await postsRes.json(),
+        accounts: await accountsRes.json(),
+      };
+    },
   });
 
   const stats = data?.analytics?.overview;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of your social media performance</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">Overview of your social media performance</p>
+        </div>
+        <Select value={days} onValueChange={setDays} placeholder="Time Period">
+          {TIME_PERIODS.map((p) => (
+            <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+          ))}
+        </Select>
       </div>
 
       {/* Stats Grid */}

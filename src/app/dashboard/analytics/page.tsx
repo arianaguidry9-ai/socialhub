@@ -1,39 +1,89 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectItem } from '@/components/ui/select';
+import { PlatformFilterTabs, PlatformEmptyState } from '@/components/analytics/PlatformFilterTabs';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 import { Download, TrendingUp } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+const TIME_PERIODS = [
+  { value: '1', label: 'Past 24 Hours' },
+  { value: '7', label: 'Past Week' },
+  { value: '30', label: 'Past Month' },
+  { value: '365', label: 'Past Year' },
+];
+
+const PLATFORM_OPTIONS = [
+  { value: 'all', label: 'All Platforms' },
+  { value: 'twitter', label: 'X / Twitter' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' },
+];
+
 export default function AnalyticsPage() {
+  const [days, setDays] = useState('30');
+  const [platform, setPlatform] = useState('all');
+  const [contentPlatform, setContentPlatform] = useState('all');
+  const [heatmapPlatform, setHeatmapPlatform] = useState('all');
+  const [hashtagPlatform, setHashtagPlatform] = useState('all');
+
   const { data, isLoading } = useQuery({
-    queryKey: ['analytics'],
+    queryKey: ['analytics', days, platform],
     queryFn: async () => {
-      const res = await fetch('/api/analytics?days=30');
+      const params = new URLSearchParams({ days });
+      if (platform !== 'all') params.set('platform', platform);
+      const res = await fetch(`/api/analytics?${params}`);
       return res.json();
     },
   });
 
   const handleExport = () => {
-    window.open('/api/analytics/export?days=90', '_blank');
+    window.open(`/api/analytics/export?days=${days}${platform !== 'all' ? `&platform=${platform}` : ''}`, '_blank');
+  };
+
+  const filteredPlatforms = platform === 'all'
+    ? data?.platforms
+    : data?.platforms?.filter((p: any) => p.platform?.toLowerCase() === platform);
+
+  /* Per-section filtering helpers */
+  const filterByPlatform = (items: any[] | undefined, plat: string, platformKey = 'platform') => {
+    if (!items) return [];
+    if (plat === 'all') return items;
+    return items.filter((item: any) => item[platformKey]?.toLowerCase() === plat);
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Analytics</h1>
           <p className="text-muted-foreground">Track your social media performance</p>
         </div>
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="mr-2 h-4 w-4" /> Export CSV
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Select value={platform} onValueChange={setPlatform} placeholder="Platform">
+            {PLATFORM_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </Select>
+          <Select value={days} onValueChange={setDays} placeholder="Time period">
+            {TIME_PERIODS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </Select>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" /> Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -72,9 +122,9 @@ export default function AnalyticsPage() {
               <CardTitle>Platform Performance</CardTitle>
             </CardHeader>
             <CardContent>
-              {data?.platforms?.length ? (
+              {filteredPlatforms?.length ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={data.platforms}>
+                  <BarChart data={filteredPlatforms}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="platform" />
                     <YAxis />
@@ -95,35 +145,39 @@ export default function AnalyticsPage() {
         {/* Content Type Performance */}
         <TabsContent value="content">
           <Card>
-            <CardHeader>
+            <CardHeader className="space-y-3">
               <CardTitle>Content Type Performance</CardTitle>
+              <PlatformFilterTabs selected={contentPlatform} onChange={setContentPlatform} />
             </CardHeader>
             <CardContent>
-              {data?.contentTypes?.length ? (
-                <div className="flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={data.contentTypes}
-                        dataKey="avgEngagement"
-                        nameKey="type"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={100}
-                        label={({ type, avgEngagement }: any) => `${type}: ${avgEngagement}`}
-                      >
-                        {data.contentTypes.map((_: any, i: number) => (
-                          <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <p className="py-12 text-center text-muted-foreground">No content data yet.</p>
-              )}
+              {(() => {
+                const items = filterByPlatform(data?.contentTypes, contentPlatform, 'platform');
+                return items.length ? (
+                  <div className="flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={items}
+                          dataKey="avgEngagement"
+                          nameKey="type"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={100}
+                          label={({ type, avgEngagement }: any) => `${type}: ${avgEngagement}`}
+                        >
+                          {items.map((_: any, i: number) => (
+                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <PlatformEmptyState platform={contentPlatform} />
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -131,84 +185,90 @@ export default function AnalyticsPage() {
         {/* Posting Heatmap */}
         <TabsContent value="heatmap">
           <Card>
-            <CardHeader>
+            <CardHeader className="space-y-3">
               <CardTitle>Best Posting Times</CardTitle>
+              <PlatformFilterTabs selected={heatmapPlatform} onChange={setHeatmapPlatform} />
             </CardHeader>
             <CardContent>
-              {data?.heatmap?.length ? (
-                <div className="overflow-x-auto">
-                  <div className="grid min-w-[600px] grid-cols-[auto_repeat(24,1fr)] gap-1">
-                    {/* Header: hours */}
-                    <div />
-                    {Array.from({ length: 24 }, (_, h) => (
-                      <div key={h} className="text-center text-xs text-muted-foreground">
-                        {h}
-                      </div>
-                    ))}
-
-                    {/* Rows: days */}
-                    {DAYS.map((day, dayIdx) => (
-                      <>
-                        <div key={`label-${dayIdx}`} className="pr-2 text-right text-xs font-medium">
-                          {day}
+              {(() => {
+                const items = filterByPlatform(data?.heatmap, heatmapPlatform, 'platform');
+                return items.length ? (
+                  <div className="overflow-x-auto">
+                    <div className="grid min-w-[600px] grid-cols-[auto_repeat(24,1fr)] gap-1">
+                      <div />
+                      {Array.from({ length: 24 }, (_, h) => (
+                        <div key={h} className="text-center text-xs text-muted-foreground">
+                          {h}
                         </div>
-                        {Array.from({ length: 24 }, (_, h) => {
-                          const cell = data.heatmap.find(
-                            (c: any) => c.dayOfWeek === dayIdx && c.hour === h
-                          );
-                          const maxEng = Math.max(...data.heatmap.map((c: any) => c.avgEngagement), 1);
-                          const intensity = cell ? cell.avgEngagement / maxEng : 0;
-                          return (
-                            <div
-                              key={`${dayIdx}-${h}`}
-                              className="aspect-square rounded-sm"
-                              style={{
-                                backgroundColor: `rgba(59, 130, 246, ${0.1 + intensity * 0.9})`,
-                              }}
-                              title={cell ? `${day} ${h}:00 — Avg: ${cell.avgEngagement}` : `${day} ${h}:00`}
-                            />
-                          );
-                        })}
-                      </>
-                    ))}
+                      ))}
+
+                      {DAYS.map((day, dayIdx) => (
+                        <div key={`row-${dayIdx}`} className="contents">
+                          <div className="pr-2 text-right text-xs font-medium">
+                            {day}
+                          </div>
+                          {Array.from({ length: 24 }, (_, h) => {
+                            const cell = items.find(
+                              (c: any) => c.dayOfWeek === dayIdx && c.hour === h
+                            );
+                            const maxEng = Math.max(...items.map((c: any) => c.avgEngagement || 0), 1);
+                            const intensity = cell ? (cell.avgEngagement || 0) / maxEng : 0;
+                            return (
+                              <div
+                                key={`${dayIdx}-${h}`}
+                                className="aspect-square rounded-sm"
+                                style={{
+                                  backgroundColor: `rgba(59, 130, 246, ${0.1 + intensity * 0.9})`,
+                                }}
+                                title={cell ? `${day} ${h}:00 — Avg: ${cell.avgEngagement}` : `${day} ${h}:00`}
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <p className="py-12 text-center text-muted-foreground">
-                  Not enough data for heatmap. Keep posting!
-                </p>
-              )}
+                ) : (
+                  <PlatformEmptyState platform={heatmapPlatform} />
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Top Hashtags */}
+        {/* Top Hashtags / Flairs */}
         <TabsContent value="hashtags">
           <Card>
-            <CardHeader>
-              <CardTitle>Top Performing Hashtags</CardTitle>
+            <CardHeader className="space-y-3">
+              <CardTitle>
+                {hashtagPlatform === 'reddit' ? 'Top Performing Flairs' : 'Top Performing Hashtags'}
+              </CardTitle>
+              <PlatformFilterTabs selected={hashtagPlatform} onChange={setHashtagPlatform} />
             </CardHeader>
             <CardContent>
-              {data?.hashtags?.length ? (
-                <div className="space-y-2">
-                  {data.hashtags.map((h: any) => (
-                    <div key={h.tag} className="flex items-center justify-between rounded-lg border p-3">
-                      <div className="flex items-center gap-3">
-                        <Badge variant="secondary">{h.tag}</Badge>
-                        <span className="text-sm text-muted-foreground">{h.count} posts</span>
+              {(() => {
+                const isReddit = hashtagPlatform === 'reddit';
+                const sourceItems = isReddit ? data?.flairs : data?.hashtags;
+                const items = filterByPlatform(sourceItems, hashtagPlatform, 'platform');
+                return items.length ? (
+                  <div className="space-y-2">
+                    {items.map((h: any, idx: number) => (
+                      <div key={h.tag || h.flair || idx} className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="secondary">{isReddit ? h.flair : h.tag}</Badge>
+                          <span className="text-sm text-muted-foreground">{h.count} posts</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <TrendingUp className="h-3 w-3 text-green-500" />
+                          {h.avgEngagement} avg engagement
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <TrendingUp className="h-3 w-3 text-green-500" />
-                        {h.avgEngagement} avg engagement
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="py-12 text-center text-muted-foreground">
-                  No hashtag data yet. Use hashtags in your posts!
-                </p>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <PlatformEmptyState platform={hashtagPlatform} />
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
