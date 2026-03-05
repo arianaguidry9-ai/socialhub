@@ -8,10 +8,12 @@ import { Select, SelectItem } from '@/components/ui/select';
 import { BarChart3, Calendar, TrendingUp, Users } from 'lucide-react';
 
 const TIME_PERIODS = [
-  { label: '24 Hours', value: '1' },
-  { label: '7 Days', value: '7' },
-  { label: '30 Days', value: '30' },
-  { label: '1 Year', value: '365' },
+  { label: 'Past 24 Hours', value: '1' },
+  { label: 'Past Week', value: '7' },
+  { label: 'Past Month', value: '30' },
+  { label: 'Past 6 Months', value: '180' },
+  { label: 'Past Year', value: '365' },
+  { label: 'All Time', value: '0' },
 ];
 
 export default function DashboardPage() {

@@ -60,25 +60,47 @@ export default function ComposePage() {
   const [subredditQuery, setSubredditQuery] = useState('');
   const [subredditDropdownOpen, setSubredditDropdownOpen] = useState(false);
   const [redGifsUrl, setRedGifsUrl] = useState('');
+  const [gifSearchOpen, setGifSearchOpen] = useState(false);
 
   /* Reddit-allowed media/gif domains (r/funnyvideos whitelist + common Reddit domains) */
   const REDDIT_MEDIA_DOMAINS = [
-    'redgifs.com', 'i.redgifs.com',
-    'imgur.com', 'i.imgur.com',
-    'gfycat.com', 'thumbs.gfycat.com',
-    'giphy.com', 'media.giphy.com', 'i.giphy.com',
-    'tenor.com', 'media.tenor.com', 'c.tenor.com',
-    'streamable.com',
-    'catbox.moe', 'files.catbox.moe',
+    /* Reddit native */
     'i.redd.it', 'v.redd.it', 'preview.redd.it',
-    'youtube.com', 'youtu.be', 'www.youtube.com',
-    'clips.twitch.tv',
+    /* Imgur */
+    'imgur.com', 'i.imgur.com', 'm.imgur.com',
+    /* RedGifs */
+    'redgifs.com', 'i.redgifs.com', 'www.redgifs.com', 'thumbs2.redgifs.com',
+    /* GIF platforms */
+    'giphy.com', 'media.giphy.com', 'i.giphy.com', 'media0.giphy.com', 'media1.giphy.com', 'media2.giphy.com', 'media3.giphy.com', 'media4.giphy.com',
+    'tenor.com', 'media.tenor.com', 'c.tenor.com',
+    'gfycat.com', 'thumbs.gfycat.com', 'giant.gfycat.com',
+    /* Video hosts */
+    'streamable.com',
+    'youtube.com', 'www.youtube.com', 'youtu.be', 'm.youtube.com',
+    'vimeo.com', 'player.vimeo.com',
+    'dailymotion.com', 'www.dailymotion.com',
+    'clips.twitch.tv', 'www.twitch.tv',
     'medal.tv',
     'streamja.com',
     'streamwo.com',
     'streamff.com',
+    'streamgg.com',
     'dubz.co',
     'clippituser.tv',
+    'rumble.com',
+    /* Image hosts */
+    'catbox.moe', 'files.catbox.moe',
+    'postimg.cc', 'i.postimg.cc',
+    'ibb.co', 'i.ibb.co',
+    'flickr.com', 'live.staticflickr.com',
+    'imgbb.com',
+    /* Social embeds */
+    'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com',
+    'twitter.com', 'x.com',
+    'instagram.com', 'www.instagram.com',
+    /* Misc */
+    'cdn.discordapp.com', 'media.discordapp.net',
+    'pbs.twimg.com',
   ];
   const [subredditRules, setSubredditRules] = useState<any[]>([]);
   const [rulesLoading, setRulesLoading] = useState(false);
@@ -183,7 +205,9 @@ export default function ComposePage() {
     if (!files) return;
     Array.from(files).forEach((file) => {
       const url = URL.createObjectURL(file);
-      addMedia({ url, type: file.type.startsWith('video/') ? 'video' : 'image', name: file.name });
+      const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+      const isVideo = file.type.startsWith('video/');
+      addMedia({ url, type: isGif ? 'gif' : isVideo ? 'video' : 'image', name: file.name });
     });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -572,34 +596,82 @@ export default function ComposePage() {
                     <div className="flex flex-wrap gap-2">
                       <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
                         <Image className="mr-2 h-4 w-4" />
-                        {showTiktok && !showInstagram ? 'Add Video' : 'Add Image / Video'}
+                        Upload Image / Video / GIF
                       </Button>
-                      <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileUpload} />
+                      <input ref={fileInputRef} type="file" accept="image/*,video/*,.gif" multiple className="hidden" onChange={handleFileUpload} />
                     </div>
 
-                    {showTiktok && (
-                      <p className="text-xs text-muted-foreground">
-                        TikTok requires a video file. Supported: MP4, WebM (up to 10 min).
-                      </p>
-                    )}
-                    {showInstagram && (
-                      <p className="text-xs text-muted-foreground">
-                        Instagram supports single image, carousel (up to 10), or video (up to 60s for feed).
-                      </p>
-                    )}
-
-                    {/* RedGif link input (Reddit) */}
-                    {showReddit && (
+                    {/* GIF embed / URL input — all platforms */}
+                    <div>
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <Label className="flex items-center gap-1.5 text-xs">
+                          <Film className="h-3.5 w-3.5" /> Embed GIF / Media URL
+                        </Label>
+                        <span className="text-xs text-muted-foreground">Paste from Giphy, Tenor, Imgur, RedGifs, etc.</span>
+                      </div>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <Link2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input placeholder="Paste media URL (RedGifs, Imgur, Gfycat, Giphy, Streamable…)" className="pl-9" value={redGifsUrl} onChange={(e) => setRedGifsUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddRedGif()} />
+                          <Input
+                            placeholder="Paste GIF or media URL…"
+                            className="pl-9"
+                            value={redGifsUrl}
+                            onChange={(e) => setRedGifsUrl(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddRedGif()}
+                          />
                         </div>
                         <Button type="button" variant="outline" size="sm" onClick={handleAddRedGif} disabled={!redGifsUrl.trim()}>
-                          <Film className="mr-1 h-4 w-4" /> Add Link
+                          <Film className="mr-1 h-4 w-4" /> Add
                         </Button>
                       </div>
-                    )}
+                      <div className="mt-1.5 flex flex-wrap gap-2">
+                        {[
+                          { name: 'Giphy', url: 'https://giphy.com' },
+                          { name: 'Tenor', url: 'https://tenor.com' },
+                          { name: 'Imgur', url: 'https://imgur.com' },
+                        ].map((site) => (
+                          <a
+                            key={site.name}
+                            href={site.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            <Globe className="h-3 w-3" /> {site.name}
+                          </a>
+                        ))}
+                        <span className="text-xs text-muted-foreground">← Browse GIFs, then paste the link</span>
+                      </div>
+                    </div>
+
+                    {/* Platform-specific media tips */}
+                    <div className="space-y-1">
+                      {showTiktok && (
+                        <p className="text-xs text-muted-foreground">
+                          <strong>TikTok:</strong> Video required. Supported: MP4, WebM (up to 10 min).
+                        </p>
+                      )}
+                      {showInstagram && (
+                        <p className="text-xs text-muted-foreground">
+                          <strong>Instagram:</strong> Supports photos, carousels (up to 10), reels, or video (up to 60s for feed).
+                        </p>
+                      )}
+                      {showReddit && (
+                        <p className="text-xs text-muted-foreground">
+                          <strong>Reddit:</strong> Supports images, videos, GIFs, and embeddable links from RedGifs, Imgur, Giphy, Tenor, Streamable, and {REDDIT_MEDIA_DOMAINS.length - 10}+ more domains.
+                        </p>
+                      )}
+                      {showTwitter && (
+                        <p className="text-xs text-muted-foreground">
+                          <strong>X / Twitter:</strong> Up to 4 images, 1 video, or 1 GIF per post.
+                        </p>
+                      )}
+                      {showLinkedin && (
+                        <p className="text-xs text-muted-foreground">
+                          <strong>LinkedIn:</strong> Supports images, videos, and documents.
+                        </p>
+                      )}
+                    </div>
 
                     {mediaFiles.length > 0 && (
                       <div className="grid grid-cols-3 gap-2">
