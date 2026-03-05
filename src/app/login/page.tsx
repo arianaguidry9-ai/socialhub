@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,11 @@ const providers = [
   { id: 'instagram', name: 'Instagram', color: 'bg-pink-500 hover:bg-pink-600' },
 ];
 
+const isDebug = process.env.NEXT_PUBLIC_DEBUG_AUTH === 'true';
+
 export default function LoginPage() {
+  const router = useRouter();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-blue-50 to-white">
       <Card className="w-full max-w-md">
@@ -33,6 +38,25 @@ export default function LoginPage() {
               Continue with {p.name}
             </Button>
           ))}
+          {isDebug && (
+            <>
+              <div className="relative my-2">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-muted-foreground">Debug Mode</span>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full border-dashed border-yellow-500 text-yellow-700 hover:bg-yellow-50"
+                onClick={() => router.push('/dashboard')}
+              >
+                Enter as Debug User
+              </Button>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
