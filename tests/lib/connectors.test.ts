@@ -6,9 +6,7 @@
 
 import { PlatformApiError } from '@/lib/connectors/base';
 
-// Mock ioredis before importing connectors that transitively import redis
-jest.mock('@/lib/redis', () => ({ redis: {} }));
-jest.mock('@/lib/db', () => ({ prisma: {} }));
+jest.mock('@/lib/db', () => ({}));
 jest.mock('@/lib/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));

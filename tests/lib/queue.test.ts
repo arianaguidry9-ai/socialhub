@@ -1,20 +1,17 @@
 /**
  * Queue scheduling test stubs.
- * Mocks BullMQ queues to verify scheduling logic without Redis.
+ * Mocks Firestore-based queue to verify scheduling logic.
  */
 
-// Mock the BullMQ Queue and ioredis before imports
-jest.mock('bullmq', () => {
-  const mockAdd = jest.fn().mockResolvedValue({});
-  const mockGetJob = jest.fn();
-  const MockQueue = jest.fn().mockImplementation(() => ({
-    add: mockAdd,
-    getJob: mockGetJob,
-  }));
-  return { Queue: MockQueue, Worker: jest.fn() };
-});
+const mockSet = jest.fn().mockResolvedValue(undefined);
+const mockGet = jest.fn().mockResolvedValue({ exists: false });
+const mockDelete = jest.fn().mockResolvedValue(undefined);
+const mockDoc = jest.fn().mockReturnValue({ set: mockSet, get: mockGet, delete: mockDelete });
 
-jest.mock('@/lib/redis', () => ({ redis: {} }));
+jest.mock('@/lib/db', () => ({
+  jobsRef: { doc: mockDoc, firestore: { collection: jest.fn() } },
+  generateId: jest.fn().mockReturnValue('mock-id'),
+}));
 jest.mock('@/lib/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -23,10 +20,10 @@ import { schedulePost, unschedulePost, scheduleMetricsFetch, QUEUE_NAMES } from 
 
 describe('QUEUE_NAMES', () => {
   it('should have all expected queue names', () => {
-    expect(QUEUE_NAMES.POST_PUBLISH).toBe('post:publish');
-    expect(QUEUE_NAMES.METRICS_FETCH).toBe('metrics:fetch');
-    expect(QUEUE_NAMES.TOKEN_REFRESH).toBe('token:refresh');
-    expect(QUEUE_NAMES.EMAIL_NOTIFY).toBe('email:notify');
+    expect(QUEUE_NAMES.POST_PUBLISH).toBe('post-publish');
+    expect(QUEUE_NAMES.METRICS_FETCH).toBe('metrics-fetch');
+    expect(QUEUE_NAMES.TOKEN_REFRESH).toBe('token-refresh');
+    expect(QUEUE_NAMES.EMAIL_NOTIFY).toBe('email-notify');
   });
 });
 

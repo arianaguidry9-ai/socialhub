@@ -19,17 +19,17 @@ interface PlatformFilterTabsProps {
 
 export function PlatformFilterTabs({ selected, onChange, className }: PlatformFilterTabsProps) {
   return (
-    <div className={cn('inline-flex flex-wrap items-center gap-1 rounded-lg border bg-muted/50 p-1', className)}>
+    <div className={cn('inline-flex flex-wrap items-center gap-1.5 rounded-xl border border-border/60 bg-background/50 p-1.5 backdrop-blur-sm', className)}>
       {PLATFORMS.map((p) => (
         <button
           key={p.value}
           type="button"
           onClick={() => onChange(p.value)}
           className={cn(
-            'rounded-md px-3 py-1 text-xs font-medium transition-all',
+            'rounded-lg px-3.5 py-1.5 text-sm font-medium transition-all',
             selected === p.value
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+              ? 'bg-accent text-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
           )}
         >
           {p.label}

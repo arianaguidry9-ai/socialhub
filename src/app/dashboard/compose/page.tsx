@@ -261,14 +261,14 @@ export default function ComposePage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Compose Post</h1>
-        <p className="text-muted-foreground">Create and schedule posts across your connected platforms</p>
+        <h1 className="text-4xl font-bold tracking-tight">Compose Post</h1>
+        <p className="mt-1 text-base text-muted-foreground">Create and schedule posts across your connected platforms</p>
       </div>
 
       {/* ── Platform Selector ── */}
-      <Card>
+      <Card className="relative z-30">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5 text-primary" />
@@ -365,7 +365,7 @@ export default function ComposePage() {
 
       {/* ── Editor + Sidebar (only shown when platform selected) ── */}
       {platformMode !== 'none' && (
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="relative z-10 grid gap-6 lg:grid-cols-3">
           {/* Main Editor */}
           <div className="space-y-4 lg:col-span-2">
             <Card>
@@ -490,7 +490,7 @@ export default function ComposePage() {
 
                 {/* ── Subreddit Search (Reddit) ── */}
                 {showReddit && (
-                  <div ref={subredditRef} className="relative">
+                  <div ref={subredditRef} className="relative z-20">
                     <div className="mb-1.5 flex items-center gap-2">
                       <Label className="flex items-center gap-1.5">
                         <Search className="h-3.5 w-3.5" /> Subreddit

@@ -1,7 +1,8 @@
 import type { NextAuthOptions } from 'next-auth';
-import { PrismaAdapter } from '@auth/prisma-adapter';
+import { FirestoreAdapter } from '@auth/firebase-adapter';
 import type { Adapter } from 'next-auth/adapters';
-import { prisma } from '@/lib/db';
+import { firestore } from '@/lib/firebase';
+import { usersRef } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { encrypt } from '@/lib/encryption';
 
@@ -10,7 +11,7 @@ import { encrypt } from '@/lib/encryption';
  * Platform tokens are encrypted before storage.
  */
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma) as Adapter,
+  adapter: FirestoreAdapter(firestore) as Adapter,
   providers: [
     // ─── Reddit OAuth2 ─────────────────────────────────────────────
     {
@@ -166,13 +167,11 @@ export const authOptions: NextAuthOptions = {
     async session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;
-        const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { plan: true, timezone: true },
-        });
-        if (dbUser) {
-          (session.user as any).plan = dbUser.plan;
-          (session.user as any).timezone = dbUser.timezone;
+        const userDoc = await usersRef.doc(user.id).get();
+        const userData = userDoc.data();
+        if (userData) {
+          (session.user as any).plan = userData.plan || 'FREE';
+          (session.user as any).timezone = userData.timezone || 'UTC';
         }
       }
       return session;
@@ -188,6 +187,10 @@ export const authOptions: NextAuthOptions = {
 
   events: {
     async createUser({ user }) {
+      await usersRef.doc(user.id).set(
+        { plan: 'FREE', timezone: 'UTC' },
+        { merge: true }
+      );
       logger.info({ userId: user.id, email: user.email }, 'New user created');
     },
   },

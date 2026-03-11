@@ -39,7 +39,7 @@ export default function QueuePage() {
         items.map((post: any) => (
           <button
             key={post.id}
-            className="flex w-full items-start justify-between rounded-lg border p-4 text-left transition-colors hover:bg-accent"
+            className="flex w-full items-start justify-between rounded-xl border border-border/40 p-5 text-left transition-all hover:bg-accent/40"
             onClick={() => setSelectedPost(post)}
           >
             <div className="flex-1">
@@ -77,10 +77,10 @@ export default function QueuePage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Post Queue</h1>
-        <p className="text-muted-foreground">Manage your scheduled, draft, and published posts</p>
+        <h1 className="text-4xl font-bold tracking-tight">Post Queue</h1>
+        <p className="mt-1 text-base text-muted-foreground">Manage your scheduled, draft, and published posts</p>
       </div>
 
       <Tabs defaultValue="scheduled">

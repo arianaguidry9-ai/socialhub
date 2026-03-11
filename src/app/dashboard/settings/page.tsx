@@ -31,10 +31,10 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your account and subscription</p>
+        <h1 className="text-4xl font-bold tracking-tight">Settings</h1>
+        <p className="mt-1 text-base text-muted-foreground">Manage your account and subscription</p>
       </div>
 
       {/* Appearance */}
@@ -56,7 +56,7 @@ export default function SettingsPage() {
                 className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all ${
                   theme === value
                     ? 'glass border-primary/50 shadow-lg shadow-primary/10'
-                    : 'border-transparent bg-white/20 hover:bg-white/40 dark:bg-white/5 dark:hover:bg-white/10'
+                    : 'border-transparent bg-accent/40 hover:bg-accent/70 dark:bg-accent/30 dark:hover:bg-accent/50'
                 }`}
               >
                 <Icon className="h-6 w-6" />
@@ -68,9 +68,9 @@ export default function SettingsPage() {
       </Card>
 
       {/* Plan */}
-      <Card>
+      <Card className="bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700 text-white">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-white">
             Current Plan
             <Badge variant={plan === 'PREMIUM' ? 'default' : 'secondary'}>
               {plan}
@@ -84,7 +84,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           {plan !== 'PREMIUM' && (
-            <div className="rounded-lg border bg-gradient-to-br from-blue-50 to-purple-50 p-6 dark:from-blue-950/30 dark:to-purple-950/30">
+            <div className="rounded-lg border border-slate-600 bg-gradient-to-br from-blue-950/40 to-purple-950/40 p-6">
               <div className="mb-4 flex items-center gap-2">
                 <Crown className="h-6 w-6 text-amber-500" />
                 <h3 className="text-xl font-bold">Premium Plan</h3>

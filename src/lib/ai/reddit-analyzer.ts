@@ -1,5 +1,5 @@
 import { anthropic, AI_MODEL, trackAiUsage } from './client';
-import { prisma } from '@/lib/db';
+import { subredditRulesCacheRef, socialAccountsRef, docData } from '@/lib/db';
 import { RedditConnector } from '@/lib/connectors/reddit';
 import { decrypt } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
@@ -28,23 +28,20 @@ export async function analyzeSubredditCompliance(input: AnalyzeInput): Promise<S
   const { userId, socialAccountId, subreddit, title, content, postType } = input;
 
   // 1. Check cache first
-  const cached = await prisma.subredditRulesCache.findUnique({
-    where: { subreddit: subreddit.toLowerCase() },
-  });
+  const cacheDoc = await subredditRulesCacheRef.doc(subreddit.toLowerCase()).get();
+  const cached = cacheDoc.exists ? cacheDoc.data() : null;
 
   let rules: any;
   let sidebar: string | null = null;
 
-  if (cached && cached.expiresAt > new Date()) {
+  if (cached && (cached.expiresAt?.toDate?.() ?? cached.expiresAt) > new Date()) {
     rules = cached.rulesJson;
     sidebar = cached.sidebarMd;
     logger.info({ subreddit }, 'Using cached subreddit rules');
   } else {
     // 2. Fetch fresh rules from Reddit API
-    const account = await prisma.socialAccount.findUnique({
-      where: { id: socialAccountId },
-      select: { accessToken: true, refreshToken: true },
-    });
+    const accountSnap = await socialAccountsRef.doc(socialAccountId).get();
+    const account = accountSnap.data();
 
     if (!account) {
       throw new Error('Social account not found');
@@ -60,33 +57,23 @@ export async function analyzeSubredditCompliance(input: AnalyzeInput): Promise<S
     sidebar = rulesData.sidebar;
 
     // Cache the rules
-    await prisma.subredditRulesCache.upsert({
-      where: { subreddit: subreddit.toLowerCase() },
-      update: {
-        rulesJson: rulesData as any,
-        sidebarMd: sidebar,
-        cachedAt: new Date(),
-        expiresAt: new Date(Date.now() + CACHE_TTL_MS),
-      },
-      create: {
-        subreddit: subreddit.toLowerCase(),
-        rulesJson: rulesData as any,
-        sidebarMd: sidebar,
-        cachedAt: new Date(),
-        expiresAt: new Date(Date.now() + CACHE_TTL_MS),
-      },
+    await subredditRulesCacheRef.doc(subreddit.toLowerCase()).set({
+      subreddit: subreddit.toLowerCase(),
+      rulesJson: rulesData,
+      sidebarMd: sidebar,
+      wikiJson: null,
+      cachedAt: new Date(),
+      expiresAt: new Date(Date.now() + CACHE_TTL_MS),
     });
 
     logger.info({ subreddit }, 'Fetched and cached fresh subreddit rules');
   }
 
   // 3. Check account requirements (karma, age)
-  const account = await prisma.socialAccount.findUnique({
-    where: { id: socialAccountId },
-    select: { metadata: true },
-  });
+  const accountSnap2 = await socialAccountsRef.doc(socialAccountId).get();
+  const accountData = accountSnap2.data();
 
-  const accountMeta = account?.metadata as Record<string, any> | null;
+  const accountMeta = accountData?.metadata as Record<string, any> | null;
   const totalKarma = accountMeta?.totalKarma ?? 0;
   const accountAge = accountMeta?.accountAge
     ? Math.floor((Date.now() / 1000 - accountMeta.accountAge) / 86400)

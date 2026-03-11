@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
-import { prisma } from '@/lib/db';
+import { usersRef, accountsRef, socialAccountsRef, generateId, docData } from '@/lib/db';
 import { encrypt } from '@/lib/encryption';
 import { connectAccountSchema } from '@/lib/validations';
 import { logger } from '@/lib/logger';
@@ -17,12 +17,13 @@ export async function POST(req: NextRequest) {
     const { platform } = connectAccountSchema.parse(body);
 
     // Count existing accounts for free tier limit
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { plan: true, _count: { select: { socialAccounts: true } } },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
+    const accountsSnap = await socialAccountsRef
+      .where('userId', '==', session.user.id)
+      .get();
 
-    if (user?.plan === 'FREE' && (user._count?.socialAccounts ?? 0) >= 2) {
+    if (user?.plan === 'FREE' && accountsSnap.size >= 2) {
       return NextResponse.json(
         { error: 'Free tier limited to 2 connected accounts. Upgrade to Premium.' },
         { status: 403 }
@@ -30,47 +31,64 @@ export async function POST(req: NextRequest) {
     }
 
     // The actual OAuth tokens come from the NextAuth Account table
-    // We copy them into SocialAccount with encryption
-    const account = await prisma.account.findFirst({
-      where: {
-        userId: session.user.id,
-        provider: platform,
-      },
-      orderBy: { id: 'desc' },
-    });
+    const accountQuery = await accountsRef
+      .where('userId', '==', session.user.id)
+      .where('provider', '==', platform)
+      .limit(1)
+      .get();
+
+    const account = accountQuery.empty ? null : accountQuery.docs[0].data();
 
     if (!account?.access_token) {
       return NextResponse.json({ error: 'No OAuth tokens found. Please authenticate first.' }, { status: 400 });
     }
 
-    const socialAccount = await prisma.socialAccount.upsert({
-      where: {
-        userId_platform_platformUserId: {
-          userId: session.user.id,
-          platform: platform.toUpperCase() as any,
-          platformUserId: account.providerAccountId,
-        },
-      },
-      update: {
+    // Check for existing social account
+    const existingSnap = await socialAccountsRef
+      .where('userId', '==', session.user.id)
+      .where('platform', '==', platform.toUpperCase())
+      .where('platformUserId', '==', account.providerAccountId)
+      .limit(1)
+      .get();
+
+    let socialAccountId: string;
+    let socialAccountPlatform: string;
+
+    if (!existingSnap.empty) {
+      // Update existing
+      socialAccountId = existingSnap.docs[0].id;
+      await socialAccountsRef.doc(socialAccountId).update({
         accessToken: encrypt(account.access_token),
         refreshToken: account.refresh_token ? encrypt(account.refresh_token) : null,
         tokenExpiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
         updatedAt: new Date(),
-      },
-      create: {
+      });
+      socialAccountPlatform = existingSnap.docs[0].data().platform;
+    } else {
+      // Create new
+      socialAccountId = generateId();
+      socialAccountPlatform = platform.toUpperCase();
+      await socialAccountsRef.doc(socialAccountId).set({
         userId: session.user.id,
-        platform: platform.toUpperCase() as any,
+        platform: socialAccountPlatform,
         platformUserId: account.providerAccountId,
         username: session.user.name || 'unknown',
+        displayName: null,
+        profileUrl: null,
+        avatarUrl: null,
         accessToken: encrypt(account.access_token),
         refreshToken: account.refresh_token ? encrypt(account.refresh_token) : null,
         tokenExpiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
-      },
-    });
+        scopes: null,
+        metadata: null,
+        connectedAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
 
     logger.info({ userId: session.user.id, platform }, 'Social account linked');
 
-    return NextResponse.json({ id: socialAccount.id, platform: socialAccount.platform });
+    return NextResponse.json({ id: socialAccountId, platform: socialAccountPlatform });
   } catch (err: any) {
     logger.error({ err }, 'Failed to link account');
     if (err.name === 'ZodError') {
@@ -97,18 +115,22 @@ export async function GET() {
       ]);
     }
 
-    const accounts = await prisma.socialAccount.findMany({
-      where: { userId: session.user.id },
-      select: {
-        id: true,
-        platform: true,
-        username: true,
-        displayName: true,
-        profileUrl: true,
-        avatarUrl: true,
-        connectedAt: true,
-      },
-      orderBy: { connectedAt: 'desc' },
+    const snap = await socialAccountsRef
+      .where('userId', '==', session.user.id)
+      .orderBy('connectedAt', 'desc')
+      .get();
+
+    const accounts = snap.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        platform: data.platform,
+        username: data.username,
+        displayName: data.displayName,
+        profileUrl: data.profileUrl,
+        avatarUrl: data.avatarUrl,
+        connectedAt: data.connectedAt?.toDate?.()?.toISOString() ?? data.connectedAt,
+      };
     });
 
     return NextResponse.json(accounts);

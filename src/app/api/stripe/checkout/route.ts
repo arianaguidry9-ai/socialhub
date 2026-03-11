@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
-import { prisma } from '@/lib/db';
+import { usersRef } from '@/lib/db';
 import { stripe, STRIPE_PRICES } from '@/lib/stripe/client';
 import { logger } from '@/lib/logger';
 
@@ -12,10 +12,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { email: true, stripeCustomerId: true, plan: true },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
@@ -33,10 +31,7 @@ export async function POST(req: NextRequest) {
         metadata: { userId: session.user.id },
       });
       customerId = customer.id;
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: { stripeCustomerId: customerId },
-      });
+      await usersRef.doc(session.user.id).update({ stripeCustomerId: customerId });
     }
 
     // Default to monthly — frontend can pass billing=yearly for annual

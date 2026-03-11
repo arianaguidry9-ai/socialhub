@@ -1,35 +1,35 @@
 /**
  * Feature gates test stubs.
- * These require mocking Prisma and are structured as integration-ready stubs.
+ * These require mocking Firestore and are structured as integration-ready stubs.
  */
 
-// Mock Prisma before imports
+const mockGet = jest.fn();
+const mockDoc = jest.fn().mockReturnValue({ get: mockGet });
+
 jest.mock('@/lib/db', () => ({
-  prisma: {
-    user: { findUnique: jest.fn() },
-    socialAccount: { count: jest.fn() },
-    post: { count: jest.fn() },
-    aiUsage: { count: jest.fn() },
-  },
+  usersRef: { doc: mockDoc },
+  socialAccountsRef: { where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) }) },
+  postsRef: { where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) }) }) }) },
+  aiUsageRef: { where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) }) }) }) },
+}));
+jest.mock('@/lib/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
 import { checkFeatureAccess, getUsageSummary } from '@/lib/stripe/feature-gates';
-import { prisma } from '@/lib/db';
-
-const mockPrisma = prisma as jest.Mocked<typeof prisma>;
 
 describe('checkFeatureAccess', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('should allow any feature for PREMIUM users', async () => {
-    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ plan: 'PREMIUM' });
+    mockGet.mockResolvedValue({ exists: true, data: () => ({ plan: 'PREMIUM' }) });
 
     const result = await checkFeatureAccess('user-1', 'reddit_rules');
     expect(result).toEqual({ allowed: true });
   });
 
   it('should deny premium-only features for FREE users', async () => {
-    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ plan: 'FREE' });
+    mockGet.mockResolvedValue({ exists: true, data: () => ({ plan: 'FREE' }) });
 
     const result = await checkFeatureAccess('user-1', 'csv_export');
     expect(result.allowed).toBe(false);
@@ -37,14 +37,14 @@ describe('checkFeatureAccess', () => {
   });
 
   it('should return not allowed when user not found', async () => {
-    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+    mockGet.mockResolvedValue({ exists: false, data: () => undefined });
 
     const result = await checkFeatureAccess('nonexistent', 'reddit_rules');
     expect(result).toEqual({ allowed: false, reason: 'User not found' });
   });
 
   it('should deny team_collaboration for FREE users', async () => {
-    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ plan: 'FREE' });
+    mockGet.mockResolvedValue({ exists: true, data: () => ({ plan: 'FREE' }) });
 
     const result = await checkFeatureAccess('user-1', 'team_collaboration');
     expect(result.allowed).toBe(false);
@@ -52,7 +52,7 @@ describe('checkFeatureAccess', () => {
   });
 
   it('should deny priority_queue for FREE users', async () => {
-    (mockPrisma.user.findUnique as jest.Mock).mockResolvedValue({ plan: 'FREE' });
+    mockGet.mockResolvedValue({ exists: true, data: () => ({ plan: 'FREE' }) });
 
     const result = await checkFeatureAccess('user-1', 'priority_queue');
     expect(result.allowed).toBe(false);
@@ -63,9 +63,12 @@ describe('getUsageSummary', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('should return usage counts for a user', async () => {
-    (mockPrisma.socialAccount.count as jest.Mock).mockResolvedValue(2);
-    (mockPrisma.post.count as jest.Mock).mockResolvedValue(15);
-    (mockPrisma.aiUsage.count as jest.Mock).mockResolvedValue(5);
+    const { socialAccountsRef, postsRef, aiUsageRef } = require('@/lib/db');
+
+    // Override the chained where().get() to return a snapshot with size
+    socialAccountsRef.where = jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 2 }) });
+    postsRef.where = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 15 }) }) }) });
+    aiUsageRef.where = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 5 }) }) }) });
 
     const summary = await getUsageSummary('user-1');
 
@@ -78,9 +81,11 @@ describe('getUsageSummary', () => {
   });
 
   it('should return zero usage for new users', async () => {
-    (mockPrisma.socialAccount.count as jest.Mock).mockResolvedValue(0);
-    (mockPrisma.post.count as jest.Mock).mockResolvedValue(0);
-    (mockPrisma.aiUsage.count as jest.Mock).mockResolvedValue(0);
+    const { socialAccountsRef, postsRef, aiUsageRef } = require('@/lib/db');
+
+    socialAccountsRef.where = jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) });
+    postsRef.where = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) }) }) });
+    aiUsageRef.where = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ get: jest.fn().mockResolvedValue({ size: 0 }) }) }) });
 
     const summary = await getUsageSummary('new-user');
 

@@ -19,13 +19,17 @@ import {
   Crown,
   Sun,
   Moon,
+  Bell,
+  Megaphone,
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Compose', href: '/dashboard/compose', icon: PenSquare },
   { name: 'Queue', href: '/dashboard/queue', icon: ListTodo },
+  { name: 'Notifications', href: '/dashboard/notifications', icon: Bell },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
+  { name: 'Promotions', href: '/dashboard/promotions', icon: Megaphone },
   { name: 'Accounts', href: '/dashboard/accounts', icon: Users },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
@@ -45,7 +49,6 @@ export function Sidebar() {
 
   const handleSignOut = () => {
     if (isDebug) {
-      // Clear the debug session flag, notify providers, and redirect
       sessionStorage.removeItem('socialhub-debug-logged-in');
       window.dispatchEvent(new Event('debug-auth-change'));
       router.push('/login');
@@ -58,31 +61,26 @@ export function Sidebar() {
     <>
       <button
         onClick={toggleSidebar}
-        className="fixed left-4 top-4 z-50 rounded-lg border bg-background/80 p-2 shadow-sm backdrop-blur-sm lg:hidden"
+        className="fixed left-4 top-4 z-50 glass rounded-xl p-2.5 lg:hidden"
       >
         <Menu className="h-5 w-5" />
       </button>
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-64 flex-col glass-sidebar transition-transform lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex w-72 flex-col glass-sidebar transition-transform lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b px-6">
-          <Link href="/dashboard" className="text-xl font-bold">
+        {/* Logo */}
+        <div className="flex h-[72px] items-center border-b border-border/40 px-7">
+          <Link href="/dashboard" className="text-2xl font-bold tracking-tight text-foreground">
             Social<span className="text-primary">Hub</span>
           </Link>
-          <button
-            onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-input bg-background shadow-sm transition-colors hover:bg-accent"
-            title={resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {resolved === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
         </div>
 
-        <nav className="flex-1 space-y-1 p-4">
+        {/* Nav */}
+        <nav className="flex-1 space-y-1 p-5">
           {navigation.map((item) => {
             const isActive = item.href === '/dashboard'
               ? pathname === '/dashboard'
@@ -93,39 +91,63 @@ export function Sidebar() {
                 href={item.href}
                 onClick={closeSidebarOnMobile}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                  'flex items-center gap-3.5 rounded-xl px-4 py-3 text-[15px] font-medium transition-all',
                   isActive
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-white/20 dark:hover:bg-white/10 hover:text-foreground'
+                    ? 'glass text-primary shadow-sm'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                 )}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className="h-5 w-5" />
                 {item.name}
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t p-4">
+        {/* Bottom section */}
+        <div className="border-t border-border/40 p-5">
           {(session?.user as any)?.plan !== 'PREMIUM' && (
             <Link
               href="/dashboard/settings?tab=billing"
-              className="mb-3 flex items-center gap-2 rounded-lg bg-gradient-to-r from-amber-400 to-orange-500 px-3 py-2 text-sm font-medium text-white"
+              className="mb-4 flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-amber-500/20"
             >
-              <Crown className="h-4 w-4" />
+              <Crown className="h-5 w-5" />
               Upgrade to Premium
             </Link>
           )}
 
-          <div className="flex items-center gap-3 px-2">
+          {/* User + Sign Out */}
+          <div className="mb-4 flex items-center gap-3 rounded-xl px-3 py-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
+              {session?.user?.name?.charAt(0) || 'U'}
+            </div>
             <div className="flex-1 truncate">
-              <p className="text-sm font-medium">{session?.user?.name}</p>
+              <p className="text-sm font-medium">{session?.user?.name || 'User'}</p>
               <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={handleSignOut}>
+            <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-9 w-9">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* Theme toggle — bottom left */}
+          <button
+            onClick={() => setTheme(resolved === 'dark' ? 'light' : 'dark')}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground"
+            title={resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {resolved === 'dark' ? (
+              <>
+                <Sun className="h-5 w-5 text-amber-400" />
+                <span>Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon className="h-5 w-5 text-indigo-400" />
+                <span>Dark Mode</span>
+              </>
+            )}
+          </button>
         </div>
       </aside>
     </>

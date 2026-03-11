@@ -1,4 +1,10 @@
-import { prisma } from '@/lib/db';
+import {
+  postTargetsRef,
+  postsRef,
+  socialAccountsRef,
+  postMetricsRef,
+  generateId,
+} from '@/lib/db';
 import { getConnector } from '@/lib/connectors';
 import { decrypt } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
@@ -6,28 +12,36 @@ import type { PlatformTokens } from '@/types';
 
 /**
  * Scheduled metrics aggregation worker.
- * Runs every 6 hours to fetch latest metrics for all published posts.
- * Intended to be triggered by a cron job or Bull repeatable.
+ * Runs to fetch latest metrics for all published posts from the last 30 days.
  */
 async function runMetricsAggregation() {
   logger.info('Starting metrics aggregation run');
 
-  // Find all published post targets from the last 30 days
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      status: 'PUBLISHED',
-      platformPostId: { not: null },
-      post: {
-        publishedAt: { gte: thirtyDaysAgo },
-      },
-    },
-    include: {
-      socialAccount: true,
-    },
-  });
+  // Get recent published posts
+  const postsSnap = await postsRef
+    .where('status', '==', 'PUBLISHED')
+    .where('publishedAt', '>=', thirtyDaysAgo)
+    .get();
+
+  const postIds = postsSnap.docs.map((d) => d.id);
+  if (postIds.length === 0) {
+    logger.info('No recent published posts found');
+    return;
+  }
+
+  // Get published post targets (batch by 30 for Firestore 'in' limit)
+  const targets: Array<{ id: string; [key: string]: any }> = [];
+  for (let i = 0; i < postIds.length; i += 30) {
+    const batch = postIds.slice(i, i + 30);
+    const snap = await postTargetsRef
+      .where('postId', 'in', batch)
+      .where('status', '==', 'PUBLISHED')
+      .get();
+    snap.docs.forEach((d) => targets.push({ id: d.id, ...d.data() }));
+  }
 
   logger.info({ count: targets.length }, 'Posts to fetch metrics for');
 
@@ -38,26 +52,29 @@ async function runMetricsAggregation() {
     try {
       if (!target.platformPostId) continue;
 
+      const saSnap = await socialAccountsRef.doc(target.socialAccountId).get();
+      const sa = saSnap.data();
+      if (!sa) continue;
+
       const tokens: PlatformTokens = {
-        accessToken: decrypt(target.socialAccount.accessToken),
-        refreshToken: target.socialAccount.refreshToken
-          ? decrypt(target.socialAccount.refreshToken)
-          : undefined,
+        accessToken: decrypt(sa.accessToken),
+        refreshToken: sa.refreshToken ? decrypt(sa.refreshToken) : undefined,
       };
 
       const connector = getConnector(target.platform.toLowerCase());
       const metrics = await connector.fetchMetrics(tokens, target.platformPostId);
 
-      await prisma.postMetric.create({
-        data: {
-          postTargetId: target.id,
-          impressions: metrics.impressions,
-          likes: metrics.likes,
-          comments: metrics.comments,
-          shares: metrics.shares,
-          saves: metrics.saves,
-          clicks: metrics.clicks,
-        },
+      await postMetricsRef.doc(generateId()).set({
+        postTargetId: target.id,
+        fetchedAt: new Date(),
+        impressions: metrics.impressions,
+        likes: metrics.likes,
+        comments: metrics.comments,
+        shares: metrics.shares,
+        saves: metrics.saves,
+        clicks: metrics.clicks,
+        reach: 0,
+        raw: null,
       });
 
       successCount++;
@@ -76,10 +93,9 @@ async function runMetricsAggregation() {
   logger.info({ successCount, failCount }, 'Metrics aggregation complete');
 }
 
-// Run immediately when script is executed directly
 runMetricsAggregation()
   .catch((err) => {
     logger.error({ err }, 'Metrics aggregation failed');
     process.exit(1);
   })
-  .finally(() => prisma.$disconnect());
+  .then(() => process.exit(0));

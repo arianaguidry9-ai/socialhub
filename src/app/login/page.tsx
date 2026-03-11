@@ -33,24 +33,24 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-violet-50/40 to-blue-50/50 px-4 dark:from-gray-950 dark:via-gray-950 dark:to-gray-950">
       {/* Background — matches the landing page gradient feel */}
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute inset-0 bg-[linear-gradient(135deg,#667eea_0%,#764ba2_25%,#f093fb_50%,#4facfe_75%,#00f2fe_100%)] opacity-[0.07]" />
-        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-violet-400/20 blur-3xl" />
-        <div className="absolute -right-32 top-1/4 h-[400px] w-[400px] rounded-full bg-blue-400/20 blur-3xl" />
-        <div className="absolute -bottom-32 left-1/3 h-[450px] w-[450px] rounded-full bg-fuchsia-400/15 blur-3xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,#667eea_0%,#764ba2_25%,#f093fb_50%,#4facfe_75%,#00f2fe_100%)] opacity-[0.08] dark:opacity-[0.05]" />
+        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-violet-400/25 blur-3xl dark:bg-violet-400/15" />
+        <div className="absolute -right-32 top-1/4 h-[400px] w-[400px] rounded-full bg-blue-400/25 blur-3xl dark:bg-blue-400/15" />
+        <div className="absolute -bottom-32 left-1/3 h-[450px] w-[450px] rounded-full bg-fuchsia-400/20 blur-3xl dark:bg-fuchsia-400/10" />
       </div>
 
-      <Card className="w-full max-w-md border-white/60 bg-white/70 shadow-xl backdrop-blur-lg dark:border-gray-800 dark:bg-gray-900/70">
+      <Card className="w-full max-w-md border-violet-200/40 bg-white/75 shadow-xl shadow-violet-500/5 backdrop-blur-xl dark:border-gray-800 dark:bg-gray-900/70">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">
+          <CardTitle className="text-2xl font-bold text-gray-900 dark:text-gray-50">
             Sign in to{' '}
             <span className="bg-gradient-to-r from-violet-600 to-blue-500 bg-clip-text text-transparent">
               SocialHub
             </span>
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-gray-500 dark:text-gray-400">
             Connect your social media accounts to get started
           </CardDescription>
         </CardHeader>
@@ -72,7 +72,7 @@ export default function LoginPage() {
                   <span className="w-full border-t" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white/80 px-2 text-muted-foreground dark:bg-gray-900/80">Debug Mode</span>
+                  <span className="bg-white/80 px-2 text-gray-500 dark:bg-gray-900/80 dark:text-gray-400">Debug Mode</span>
                 </div>
               </div>
               <Button

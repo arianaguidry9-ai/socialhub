@@ -30,7 +30,7 @@ export function Dialog({ open, onOpenChange, children }: DialogProps) {
       />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         <div
-          className="relative w-full max-w-lg rounded-xl border bg-background shadow-2xl"
+          className="relative w-full max-w-lg rounded-2xl glass border-border/40 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {children}

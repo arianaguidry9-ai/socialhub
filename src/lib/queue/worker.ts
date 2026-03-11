@@ -1,290 +1,301 @@
-import { Worker, type Job, type ConnectionOptions } from 'bullmq';
-import { redis } from '@/lib/redis';
-import { prisma } from '@/lib/db';
+import {
+  jobsRef,
+  postTargetsRef,
+  postsRef,
+  socialAccountsRef,
+  postMetricsRef,
+  usersRef,
+  generateId,
+} from '@/lib/db';
 import { getConnector } from '@/lib/connectors';
 import { decrypt, encrypt } from '@/lib/encryption';
 import { logger } from '@/lib/logger';
 import { QUEUE_NAMES, scheduleMetricsFetch, emailNotifyQueue } from './queues';
 import type { PlatformTokens, PostContent } from '@/types';
 
-/**
- * Post publishing worker.
- * Processes scheduled posts by sending them to the appropriate platform.
- */
-const publishWorker = new Worker(
-  QUEUE_NAMES.POST_PUBLISH,
-  async (job: Job<{ postTargetId: string }>) => {
-    const { postTargetId } = job.data;
-    logger.info({ postTargetId, attempt: job.attemptsMade + 1 }, 'Processing post publish job');
+const POLL_INTERVAL = 5000; // 5 seconds
 
-    // Load post target with related data
-    const target = await prisma.postTarget.findUnique({
-      where: { id: postTargetId },
-      include: {
-        post: true,
-        socialAccount: true,
-      },
-    });
+/** Process a single post-publish job. */
+async function processPublishJob(data: { postTargetId: string }) {
+  const { postTargetId } = data;
 
-    if (!target) {
-      throw new Error(`PostTarget ${postTargetId} not found`);
-    }
+  const targetSnap = await postTargetsRef.doc(postTargetId).get();
+  const target = targetSnap.data();
+  if (!target) throw new Error(`PostTarget ${postTargetId} not found`);
 
-    // Update status to POSTING
-    await prisma.postTarget.update({
-      where: { id: postTargetId },
-      data: { status: 'POSTING' },
-    });
+  const postSnap = await postsRef.doc(target.postId).get();
+  const post = postSnap.data();
+  if (!post) throw new Error(`Post ${target.postId} not found`);
 
-    // Decrypt tokens
-    const tokens: PlatformTokens = {
-      accessToken: decrypt(target.socialAccount.accessToken),
-      refreshToken: target.socialAccount.refreshToken
-        ? decrypt(target.socialAccount.refreshToken)
-        : undefined,
-      expiresAt: target.socialAccount.tokenExpiresAt ?? undefined,
-    };
+  const saSnap = await socialAccountsRef.doc(target.socialAccountId).get();
+  const socialAccount = saSnap.data();
+  if (!socialAccount) throw new Error(`SocialAccount ${target.socialAccountId} not found`);
 
-    // Check if token needs refresh
-    if (tokens.expiresAt && tokens.expiresAt < new Date()) {
-      logger.info({ postTargetId }, 'Refreshing expired token before publish');
-      const connector = getConnector(target.platform.toLowerCase());
-      const newTokens = await connector.refreshAccessToken(tokens);
+  await postTargetsRef.doc(postTargetId).update({ status: 'POSTING' });
 
-      // Update stored tokens
-      await prisma.socialAccount.update({
-        where: { id: target.socialAccountId },
-        data: {
-          accessToken: encrypt(newTokens.accessToken),
-          refreshToken: newTokens.refreshToken ? encrypt(newTokens.refreshToken) : undefined,
-          tokenExpiresAt: newTokens.expiresAt,
-        },
-      });
+  const tokens: PlatformTokens = {
+    accessToken: decrypt(socialAccount.accessToken),
+    refreshToken: socialAccount.refreshToken ? decrypt(socialAccount.refreshToken) : undefined,
+    expiresAt: socialAccount.tokenExpiresAt?.toDate?.() ?? socialAccount.tokenExpiresAt ?? undefined,
+  };
 
-      tokens.accessToken = newTokens.accessToken;
-    }
-
-    // Build content
-    const content: PostContent = {
-      text: target.post.content || undefined,
-      title: target.post.title || undefined,
-      mediaUrls: target.post.mediaUrls,
-      link: target.post.link || undefined,
-      subreddit: target.subreddit || undefined,
-      flair: target.flair || undefined,
-    };
-
-    // Publish
+  if (tokens.expiresAt && tokens.expiresAt < new Date()) {
+    logger.info({ postTargetId }, 'Refreshing expired token before publish');
     const connector = getConnector(target.platform.toLowerCase());
-    const result = await connector.publish(tokens, content);
-
-    if (result.success) {
-      await prisma.postTarget.update({
-        where: { id: postTargetId },
-        data: {
-          status: 'PUBLISHED',
-          platformPostId: result.platformPostId,
-          publishedUrl: result.publishedUrl,
-        },
-      });
-
-      // Also update parent post if all targets are published
-      const allTargets = await prisma.postTarget.findMany({
-        where: { postId: target.postId },
-        select: { status: true },
-      });
-      const allPublished = allTargets.every((t) => t.status === 'PUBLISHED');
-      if (allPublished) {
-        await prisma.post.update({
-          where: { id: target.postId },
-          data: { status: 'PUBLISHED', publishedAt: new Date() },
-        });
-      }
-
-      // Schedule metrics fetching
-      if (result.platformPostId) {
-        await scheduleMetricsFetch(postTargetId);
-      }
-
-      logger.info({ postTargetId, platformPostId: result.platformPostId }, 'Post published successfully');
-    } else {
-      throw new Error(result.error || 'Unknown publish error');
-    }
-  },
-  {
-    connection: redis as unknown as ConnectionOptions,
-    concurrency: 5,
-    limiter: { max: 10, duration: 60000 }, // 10 posts per minute globally
+    const newTokens = await connector.refreshAccessToken(tokens);
+    await socialAccountsRef.doc(target.socialAccountId).update({
+      accessToken: encrypt(newTokens.accessToken),
+      refreshToken: newTokens.refreshToken ? encrypt(newTokens.refreshToken) : null,
+      tokenExpiresAt: newTokens.expiresAt || null,
+    });
+    tokens.accessToken = newTokens.accessToken;
   }
-);
 
-publishWorker.on('failed', async (job, error) => {
-  const postTargetId = job?.data?.postTargetId;
-  logger.error({ postTargetId, error: error.message, attempt: job?.attemptsMade }, 'Post publish failed');
+  const content: PostContent = {
+    text: post.content || undefined,
+    title: post.title || undefined,
+    mediaUrls: post.mediaUrls || [],
+    link: post.link || undefined,
+    subreddit: target.subreddit || undefined,
+    flair: target.flair || undefined,
+  };
 
-  if (postTargetId && job && job.attemptsMade >= (job.opts.attempts || 3)) {
-    // Final failure — mark as failed and notify user
-    const target = await prisma.postTarget.update({
-      where: { id: postTargetId },
-      data: {
+  const connector = getConnector(target.platform.toLowerCase());
+  const result = await connector.publish(tokens, content);
+
+  if (result.success) {
+    await postTargetsRef.doc(postTargetId).update({
+      status: 'PUBLISHED',
+      platformPostId: result.platformPostId || null,
+      publishedUrl: result.publishedUrl || null,
+    });
+
+    const allTargetsSnap = await postTargetsRef.where('postId', '==', target.postId).get();
+    const allPublished = allTargetsSnap.docs.every((d) => d.data().status === 'PUBLISHED');
+    if (allPublished) {
+      await postsRef.doc(target.postId).update({ status: 'PUBLISHED', publishedAt: new Date() });
+    }
+
+    if (result.platformPostId) {
+      await scheduleMetricsFetch(postTargetId);
+    }
+
+    logger.info({ postTargetId, platformPostId: result.platformPostId }, 'Post published successfully');
+  } else {
+    throw new Error(result.error || 'Unknown publish error');
+  }
+}
+
+/** Process a single metrics-fetch job. */
+async function processMetricsFetchJob(data: { postTargetId: string }) {
+  const { postTargetId } = data;
+  logger.info({ postTargetId }, 'Fetching metrics');
+
+  const targetSnap = await postTargetsRef.doc(postTargetId).get();
+  const target = targetSnap.data();
+  if (!target?.platformPostId) {
+    logger.warn({ postTargetId }, 'No platform post ID, skipping metrics');
+    return;
+  }
+
+  const saSnap = await socialAccountsRef.doc(target.socialAccountId).get();
+  const sa = saSnap.data()!;
+
+  const tokens: PlatformTokens = {
+    accessToken: decrypt(sa.accessToken),
+    refreshToken: sa.refreshToken ? decrypt(sa.refreshToken) : undefined,
+  };
+
+  const connector = getConnector(target.platform.toLowerCase());
+  const metrics = await connector.fetchMetrics(tokens, target.platformPostId);
+
+  await postMetricsRef.doc(generateId()).set({
+    postTargetId,
+    fetchedAt: new Date(),
+    impressions: metrics.impressions,
+    likes: metrics.likes,
+    comments: metrics.comments,
+    shares: metrics.shares,
+    saves: metrics.saves,
+    clicks: metrics.clicks,
+    reach: 0,
+    raw: null,
+  });
+
+  logger.info({ postTargetId, metrics }, 'Metrics fetched and stored');
+}
+
+/** Process a single email-notify job. */
+async function processEmailNotifyJob(data: { userId: string; postTargetId: string; error: string }) {
+  const { userId, postTargetId, error } = data;
+
+  const userSnap = await usersRef.doc(userId).get();
+  const user = userSnap.data();
+  if (!user?.email) return;
+
+  if (process.env.RESEND_API_KEY) {
+    const { Resend } = await import('resend');
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    await resend.emails.send({
+      from: 'SocialHub <notifications@socialhub.app>',
+      to: user.email,
+      subject: 'Post Publishing Failed — SocialHub',
+      html: `
+        <h2>Post Publishing Failed</h2>
+        <p>Hi ${user.name || 'there'},</p>
+        <p>Unfortunately, one of your scheduled posts failed to publish.</p>
+        <p><strong>Error:</strong> ${error}</p>
+        <p>You can review and retry from your <a href="${process.env.NEXTAUTH_URL}/dashboard/queue">queue dashboard</a>.</p>
+        <p>— The SocialHub Team</p>
+      `,
+    });
+
+    logger.info({ userId, postTargetId }, 'Failure notification email sent');
+  }
+}
+
+/** Process a single token-refresh job. */
+async function processTokenRefreshJob(data: { socialAccountId: string }) {
+  const { socialAccountId } = data;
+
+  const saSnap = await socialAccountsRef.doc(socialAccountId).get();
+  const account = saSnap.data();
+  if (!account) return;
+
+  const tokens: PlatformTokens = {
+    accessToken: decrypt(account.accessToken),
+    refreshToken: account.refreshToken ? decrypt(account.refreshToken) : undefined,
+  };
+
+  const connector = getConnector(account.platform.toLowerCase());
+  const newTokens = await connector.refreshAccessToken(tokens);
+
+  await socialAccountsRef.doc(socialAccountId).update({
+    accessToken: encrypt(newTokens.accessToken),
+    refreshToken: newTokens.refreshToken ? encrypt(newTokens.refreshToken) : null,
+    tokenExpiresAt: newTokens.expiresAt || null,
+  });
+
+  logger.info({ socialAccountId, platform: account.platform }, 'Token refreshed');
+}
+
+/** Handle a failed publish job. */
+async function handlePublishFailure(data: { postTargetId: string }, error: Error, attempts: number, maxAttempts: number) {
+  const { postTargetId } = data;
+  logger.error({ postTargetId, error: error.message, attempt: attempts }, 'Post publish failed');
+
+  if (attempts >= maxAttempts) {
+    const targetSnap = await postTargetsRef.doc(postTargetId).get();
+    const target = targetSnap.data();
+    if (target) {
+      await postTargetsRef.doc(postTargetId).update({
         status: 'FAILED',
         errorMessage: error.message.substring(0, 500),
-        retryCount: job.attemptsMade,
-      },
-      include: { post: { select: { userId: true } } },
-    });
-
-    // Also fail parent post
-    await prisma.post.update({
-      where: { id: target.postId },
-      data: { status: 'FAILED', errorMessage: error.message.substring(0, 500) },
-    });
-
-    // Queue email notification
-    await emailNotifyQueue.add('failure', {
-      userId: target.post.userId,
-      postTargetId,
-      error: error.message,
-    });
-  }
-});
-
-publishWorker.on('completed', (job) => {
-  logger.info({ postTargetId: job.data.postTargetId }, 'Post publish job completed');
-});
-
-/**
- * Metrics fetching worker.
- */
-const metricsFetchWorker = new Worker(
-  QUEUE_NAMES.METRICS_FETCH,
-  async (job: Job<{ postTargetId: string }>) => {
-    const { postTargetId } = job.data;
-    logger.info({ postTargetId }, 'Fetching metrics');
-
-    const target = await prisma.postTarget.findUnique({
-      where: { id: postTargetId },
-      include: { socialAccount: true },
-    });
-
-    if (!target?.platformPostId) {
-      logger.warn({ postTargetId }, 'No platform post ID, skipping metrics');
-      return;
-    }
-
-    const tokens: PlatformTokens = {
-      accessToken: decrypt(target.socialAccount.accessToken),
-      refreshToken: target.socialAccount.refreshToken
-        ? decrypt(target.socialAccount.refreshToken)
-        : undefined,
-    };
-
-    const connector = getConnector(target.platform.toLowerCase());
-    const metrics = await connector.fetchMetrics(tokens, target.platformPostId);
-
-    await prisma.postMetric.create({
-      data: {
-        postTargetId,
-        impressions: metrics.impressions,
-        likes: metrics.likes,
-        comments: metrics.comments,
-        shares: metrics.shares,
-        saves: metrics.saves,
-        clicks: metrics.clicks,
-      },
-    });
-
-    logger.info({ postTargetId, metrics }, 'Metrics fetched and stored');
-  },
-  {
-    connection: redis as unknown as ConnectionOptions,
-    concurrency: 10,
-  }
-);
-
-/**
- * Email notification worker.
- */
-const emailWorker = new Worker(
-  QUEUE_NAMES.EMAIL_NOTIFY,
-  async (job: Job<{ userId: string; postTargetId: string; error: string }>) => {
-    const { userId, postTargetId, error } = job.data;
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
-
-    if (!user?.email) return;
-
-    // Use Resend to send failure notification
-    if (process.env.RESEND_API_KEY) {
-      const { Resend } = await import('resend');
-      const resend = new Resend(process.env.RESEND_API_KEY);
-
-      await resend.emails.send({
-        from: 'SocialHub <notifications@socialhub.app>',
-        to: user.email,
-        subject: 'Post Publishing Failed — SocialHub',
-        html: `
-          <h2>Post Publishing Failed</h2>
-          <p>Hi ${user.name || 'there'},</p>
-          <p>Unfortunately, one of your scheduled posts failed to publish.</p>
-          <p><strong>Error:</strong> ${error}</p>
-          <p>You can review and retry from your <a href="${process.env.NEXTAUTH_URL}/dashboard/queue">queue dashboard</a>.</p>
-          <p>— The SocialHub Team</p>
-        `,
+        retryCount: attempts,
       });
-
-      logger.info({ userId, postTargetId }, 'Failure notification email sent');
+      await postsRef.doc(target.postId).update({
+        status: 'FAILED',
+        errorMessage: error.message.substring(0, 500),
+      });
+      const postSnap = await postsRef.doc(target.postId).get();
+      const post = postSnap.data();
+      if (post) {
+        await emailNotifyQueue.add('failure', {
+          userId: post.userId,
+          postTargetId,
+          error: error.message,
+        });
+      }
     }
-  },
-  {
-    connection: redis as unknown as ConnectionOptions,
-    concurrency: 3,
   }
-);
+}
 
-/**
- * Token refresh worker.
- */
-const tokenRefreshWorker = new Worker(
-  QUEUE_NAMES.TOKEN_REFRESH,
-  async (job: Job<{ socialAccountId: string }>) => {
-    const { socialAccountId } = job.data;
+/** Process a single job document. */
+async function processJob(jobDoc: FirebaseFirestore.DocumentSnapshot) {
+  const job = jobDoc.data()!;
+  const jobId = jobDoc.id;
 
-    const account = await prisma.socialAccount.findUnique({
-      where: { id: socialAccountId },
-    });
+  await jobsRef.doc(jobId).update({ status: 'active', attempts: job.attempts + 1 });
 
-    if (!account) return;
+  try {
+    switch (job.queue) {
+      case QUEUE_NAMES.POST_PUBLISH:
+        await processPublishJob(job.data);
+        break;
+      case QUEUE_NAMES.METRICS_FETCH:
+        await processMetricsFetchJob(job.data);
+        break;
+      case QUEUE_NAMES.EMAIL_NOTIFY:
+        await processEmailNotifyJob(job.data);
+        break;
+      case QUEUE_NAMES.TOKEN_REFRESH:
+        await processTokenRefreshJob(job.data);
+        break;
+      default:
+        logger.warn({ queue: job.queue }, 'Unknown queue');
+    }
 
-    const tokens: PlatformTokens = {
-      accessToken: decrypt(account.accessToken),
-      refreshToken: account.refreshToken ? decrypt(account.refreshToken) : undefined,
-    };
+    await jobsRef.doc(jobId).update({ status: 'completed', completedAt: new Date() });
+    logger.info({ jobId, queue: job.queue }, 'Job completed');
+  } catch (err: any) {
+    const attempts = job.attempts + 1;
 
-    const connector = getConnector(account.platform.toLowerCase());
-    const newTokens = await connector.refreshAccessToken(tokens);
+    if (attempts >= job.maxAttempts) {
+      await jobsRef.doc(jobId).update({
+        status: 'failed',
+        error: err.message?.substring(0, 500) || 'Unknown error',
+      });
+      if (job.queue === QUEUE_NAMES.POST_PUBLISH) {
+        await handlePublishFailure(job.data, err, attempts, job.maxAttempts);
+      }
+    } else {
+      const backoff = Math.pow(2, attempts) * 5000;
+      await jobsRef.doc(jobId).update({
+        status: 'pending',
+        processAfter: new Date(Date.now() + backoff),
+        error: err.message?.substring(0, 500) || 'Unknown error',
+      });
+    }
 
-    await prisma.socialAccount.update({
-      where: { id: socialAccountId },
-      data: {
-        accessToken: encrypt(newTokens.accessToken),
-        refreshToken: newTokens.refreshToken ? encrypt(newTokens.refreshToken) : undefined,
-        tokenExpiresAt: newTokens.expiresAt,
-      },
-    });
-
-    logger.info({ socialAccountId, platform: account.platform }, 'Token refreshed');
-  },
-  {
-    connection: redis as unknown as ConnectionOptions,
-    concurrency: 5,
+    logger.error({ jobId, err: err.message, attempt: attempts }, 'Job failed');
   }
-);
+}
 
-export { publishWorker, metricsFetchWorker, emailWorker, tokenRefreshWorker };
+/** Poll for and process pending jobs. */
+async function pollJobs() {
+  const now = new Date();
+  const snap = await jobsRef
+    .where('status', '==', 'pending')
+    .where('processAfter', '<=', now)
+    .orderBy('processAfter')
+    .limit(10)
+    .get();
 
-// Start all workers
-logger.info('Queue workers started');
+  for (const doc of snap.docs) {
+    await processJob(doc);
+  }
+
+  return snap.docs.length;
+}
+
+/** Main worker loop. */
+async function main() {
+  logger.info('Starting Firestore job worker...');
+
+  const run = async () => {
+    try {
+      const processed = await pollJobs();
+      if (processed > 0) {
+        logger.info({ processed }, 'Processed jobs');
+      }
+    } catch (err) {
+      logger.error({ err }, 'Worker poll error');
+    }
+    setTimeout(run, POLL_INTERVAL);
+  };
+
+  run();
+}
+
+main();

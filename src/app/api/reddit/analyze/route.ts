@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
 import { analyzeSubredditCompliance } from '@/lib/ai/reddit-analyzer';
 import { redditAnalyzeSchema } from '@/lib/validations';
-import { prisma } from '@/lib/db';
+import { usersRef, socialAccountsRef } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 /** POST /api/reddit/analyze — Analyze subreddit compliance for a proposed post. */
@@ -14,10 +14,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Premium-only feature
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { plan: true },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
 
     if (user?.plan !== 'PREMIUM') {
       return NextResponse.json(
@@ -30,17 +28,20 @@ export async function POST(req: NextRequest) {
     const input = redditAnalyzeSchema.parse(body);
 
     // Find the user's Reddit social account
-    const socialAccount = await prisma.socialAccount.findFirst({
-      where: { userId: session.user.id, platform: 'REDDIT' },
-      select: { id: true },
-    });
+    const saSnap = await socialAccountsRef
+      .where('userId', '==', session.user.id)
+      .where('platform', '==', 'REDDIT')
+      .limit(1)
+      .get();
 
-    if (!socialAccount) {
+    if (saSnap.empty) {
       return NextResponse.json(
         { error: 'No Reddit account connected. Please connect your Reddit account first.' },
         { status: 400 }
       );
     }
+
+    const socialAccount = { id: saSnap.docs[0].id };
 
     const analysis = await analyzeSubredditCompliance({
       userId: session.user.id,

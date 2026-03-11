@@ -67,6 +67,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('socialhub-theme');if(t==='dark'){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className={inter.className}>
         <Providers>{children}</Providers>

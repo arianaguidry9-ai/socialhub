@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db';
+import { usersRef, socialAccountsRef, postsRef, aiUsageRef } from '@/lib/db';
 import { FREE_TIER_LIMITS, PREMIUM_TIER_LIMITS } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -20,10 +20,8 @@ export async function checkFeatureAccess(
   userId: string,
   feature: Feature
 ): Promise<{ allowed: boolean; reason?: string }> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { plan: true },
-  });
+  const userSnap = await usersRef.doc(userId).get();
+  const user = userSnap.data();
 
   if (!user) {
     return { allowed: false, reason: 'User not found' };
@@ -64,27 +62,23 @@ export async function getUsageSummary(userId: string) {
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const [accountCount, postCount, aiCaptionCount] = await Promise.all([
-    prisma.socialAccount.count({ where: { userId } }),
-    prisma.post.count({
-      where: {
-        userId,
-        createdAt: { gte: startOfMonth },
-        status: { not: 'DRAFT' },
-      },
-    }),
-    prisma.aiUsage.count({
-      where: {
-        userId,
-        feature: 'CAPTION',
-        createdAt: { gte: startOfMonth },
-      },
-    }),
+  const [accountsSnap, postsSnap, aiSnap] = await Promise.all([
+    socialAccountsRef.where('userId', '==', userId).get(),
+    postsRef
+      .where('userId', '==', userId)
+      .where('createdAt', '>=', startOfMonth)
+      .where('status', '!=', 'DRAFT')
+      .get(),
+    aiUsageRef
+      .where('userId', '==', userId)
+      .where('feature', '==', 'CAPTION')
+      .where('createdAt', '>=', startOfMonth)
+      .get(),
   ]);
 
   return {
-    accounts: { used: accountCount, limit: FREE_TIER_LIMITS.maxAccounts },
-    posts: { used: postCount, limit: FREE_TIER_LIMITS.maxPostsPerMonth },
-    aiCaptions: { used: aiCaptionCount, limit: FREE_TIER_LIMITS.maxAiCaptionsPerMonth },
+    accounts: { used: accountsSnap.size, limit: FREE_TIER_LIMITS.maxAccounts },
+    posts: { used: postsSnap.size, limit: FREE_TIER_LIMITS.maxPostsPerMonth },
+    aiCaptions: { used: aiSnap.size, limit: FREE_TIER_LIMITS.maxAiCaptionsPerMonth },
   };
 }

@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth/session';
 import { generateCaption, suggestHashtags, repurposeContent } from '@/lib/ai';
 import { checkAiRateLimit } from '@/lib/ai/client';
 import { aiCaptionSchema } from '@/lib/validations';
-import { prisma } from '@/lib/db';
+import { usersRef } from '@/lib/db';
 import { FREE_TIER_LIMITS } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -19,10 +19,8 @@ export async function POST(req: NextRequest) {
     const input = aiCaptionSchema.parse(body);
 
     // Check rate limit for free users
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { plan: true },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
 
     if (user?.plan === 'FREE') {
       const allowed = await checkAiRateLimit(

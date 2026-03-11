@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db';
+import { postsRef, postTargetsRef, postMetricsRef, socialAccountsRef, batchGetByIds } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 interface TimeHeatmapEntry {
@@ -24,35 +24,71 @@ interface PlatformComparison {
 }
 
 /**
+ * Fetch published post targets with their related data for a user within a date range.
+ * This is the shared data-fetching logic used by all aggregation functions.
+ */
+async function getPublishedTargetsWithData(userId: string, startDate: Date, endDate: Date) {
+  // Step 1: Get user's published posts in date range
+  const postsSnap = await postsRef
+    .where('userId', '==', userId)
+    .where('publishedAt', '>=', startDate)
+    .where('publishedAt', '<=', endDate)
+    .get();
+
+  if (postsSnap.empty) return [];
+
+  const postsMap = new Map<string, Record<string, any>>();
+  postsSnap.docs.forEach((d) => postsMap.set(d.id, { id: d.id, ...d.data() }));
+  const postIds = [...postsMap.keys()];
+
+  // Step 2: Get post targets for these posts (batch by 30 for Firestore 'in' limit)
+  const targetDocs: Array<{ id: string; [key: string]: any }> = [];
+  for (let i = 0; i < postIds.length; i += 30) {
+    const batch = postIds.slice(i, i + 30);
+    const snap = await postTargetsRef
+      .where('postId', 'in', batch)
+      .where('status', '==', 'PUBLISHED')
+      .get();
+    snap.docs.forEach((d) => targetDocs.push({ id: d.id, ...d.data() }));
+  }
+
+  if (targetDocs.length === 0) return [];
+
+  // Step 3: Batch-fetch social accounts
+  const saIds = [...new Set(targetDocs.map((t) => t.socialAccountId))];
+  const socialAccounts = await batchGetByIds(socialAccountsRef, saIds);
+
+  // Step 4: Fetch latest metric for each target
+  const metricsMap = new Map<string, Record<string, any>>();
+  for (const t of targetDocs) {
+    const snap = await postMetricsRef
+      .where('postTargetId', '==', t.id)
+      .orderBy('fetchedAt', 'desc')
+      .limit(1)
+      .get();
+    if (!snap.empty) {
+      metricsMap.set(t.id, { id: snap.docs[0].id, ...snap.docs[0].data() });
+    }
+  }
+
+  // Assemble
+  return targetDocs.map((t) => ({
+    ...t,
+    postId: t.postId as string,
+    socialAccountId: t.socialAccountId as string,
+    publishedUrl: t.publishedUrl as string | undefined,
+    post: postsMap.get(t.postId)!,
+    socialAccount: socialAccounts.get(t.socialAccountId) || null,
+    metrics: metricsMap.has(t.id) ? [metricsMap.get(t.id)!] : [],
+  }));
+}
+
+/**
  * Aggregate analytics data for a user within a date range.
  */
-export async function getUserAnalytics(
-  userId: string,
-  startDate: Date,
-  endDate: Date
-) {
-  // Get all post targets with metrics for this user in the date range
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      post: {
-        userId,
-        publishedAt: { gte: startDate, lte: endDate },
-      },
-      status: 'PUBLISHED',
-    },
-    include: {
-      post: true,
-      metrics: {
-        orderBy: { fetchedAt: 'desc' },
-        take: 1, // Latest metrics snapshot
-      },
-      socialAccount: {
-        select: { platform: true, username: true },
-      },
-    },
-  });
+export async function getUserAnalytics(userId: string, startDate: Date, endDate: Date) {
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
 
-  // Aggregate totals
   let totalImpressions = 0;
   let totalLikes = 0;
   let totalComments = 0;
@@ -62,11 +98,11 @@ export async function getUserAnalytics(
   for (const t of targets) {
     const m = t.metrics[0];
     if (m) {
-      totalImpressions += m.impressions;
-      totalLikes += m.likes;
-      totalComments += m.comments;
-      totalShares += m.shares;
-      totalClicks += m.clicks;
+      totalImpressions += m.impressions || 0;
+      totalLikes += m.likes || 0;
+      totalComments += m.comments || 0;
+      totalShares += m.shares || 0;
+      totalClicks += m.clicks || 0;
     }
   }
 
@@ -87,7 +123,7 @@ export async function getUserAnalytics(
     posts: targets.map((t) => ({
       id: t.id,
       postId: t.postId,
-      platform: t.socialAccount.platform,
+      platform: t.socialAccount?.platform,
       publishedAt: t.post.publishedAt,
       publishedUrl: t.publishedUrl,
       metrics: t.metrics[0] || null,
@@ -96,40 +132,28 @@ export async function getUserAnalytics(
 }
 
 /**
- * Generate a posting times heatmap (hour × day grid).
+ * Generate a posting times heatmap (hour x day grid).
  */
 export async function getPostingHeatmap(
   userId: string,
   startDate: Date,
   endDate: Date
 ): Promise<TimeHeatmapEntry[]> {
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      post: {
-        userId,
-        publishedAt: { gte: startDate, lte: endDate },
-      },
-      status: 'PUBLISHED',
-    },
-    include: {
-      post: { select: { publishedAt: true } },
-      metrics: { orderBy: { fetchedAt: 'desc' }, take: 1 },
-    },
-  });
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
 
-  // Group by day of week + hour
   const grid = new Map<string, { totalEngagement: number; count: number }>();
 
   for (const t of targets) {
-    const dt = t.post.publishedAt;
+    const dt = t.post.publishedAt?.toDate?.() ?? t.post.publishedAt;
     if (!dt) continue;
 
-    const dayOfWeek = dt.getUTCDay();
-    const hour = dt.getUTCHours();
+    const d = new Date(dt);
+    const dayOfWeek = d.getUTCDay();
+    const hour = d.getUTCHours();
     const key = `${dayOfWeek}-${hour}`;
 
     const m = t.metrics[0];
-    const engagement = m ? m.likes + m.comments + m.shares : 0;
+    const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
 
     const existing = grid.get(key) || { totalEngagement: 0, count: 0 };
     grid.set(key, {
@@ -160,19 +184,7 @@ export async function getContentTypePerformance(
   startDate: Date,
   endDate: Date
 ): Promise<ContentTypePerformance[]> {
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      post: {
-        userId,
-        publishedAt: { gte: startDate, lte: endDate },
-      },
-      status: 'PUBLISHED',
-    },
-    include: {
-      post: { select: { mediaUrls: true, link: true, content: true } },
-      metrics: { orderBy: { fetchedAt: 'desc' }, take: 1 },
-    },
-  });
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
 
   const buckets: Record<string, { engagement: number; impressions: number; count: number }> = {
     text: { engagement: 0, impressions: 0, count: 0 },
@@ -182,13 +194,14 @@ export async function getContentTypePerformance(
   };
 
   for (const t of targets) {
+    const mediaUrls = t.post.mediaUrls || [];
     let type = 'text';
-    if (t.post.mediaUrls.some((u) => /\.(mp4|mov|webm)/i.test(u))) type = 'video';
-    else if (t.post.mediaUrls.length > 0) type = 'image';
+    if (mediaUrls.some((u: string) => /\.(mp4|mov|webm)/i.test(u))) type = 'video';
+    else if (mediaUrls.length > 0) type = 'image';
     else if (t.post.link) type = 'link';
 
     const m = t.metrics[0];
-    const engagement = m ? m.likes + m.comments + m.shares : 0;
+    const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
     const impressions = m?.impressions || 0;
 
     buckets[type].engagement += engagement;
@@ -214,26 +227,14 @@ export async function getPlatformComparison(
   startDate: Date,
   endDate: Date
 ): Promise<PlatformComparison[]> {
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      post: {
-        userId,
-        publishedAt: { gte: startDate, lte: endDate },
-      },
-      status: 'PUBLISHED',
-    },
-    include: {
-      socialAccount: { select: { platform: true } },
-      metrics: { orderBy: { fetchedAt: 'desc' }, take: 1 },
-    },
-  });
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
 
   const byPlatform = new Map<string, { engagement: number; impressions: number; count: number }>();
 
   for (const t of targets) {
-    const platform = t.socialAccount.platform;
+    const platform = t.socialAccount?.platform || 'unknown';
     const m = t.metrics[0];
-    const engagement = m ? m.likes + m.comments + m.shares : 0;
+    const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
     const impressions = m?.impressions || 0;
 
     const existing = byPlatform.get(platform) || { engagement: 0, impressions: 0, count: 0 };
@@ -249,7 +250,7 @@ export async function getPlatformComparison(
     totalPosts: v.count,
     avgEngagement: Math.round(v.engagement / v.count),
     avgImpressions: Math.round(v.impressions / v.count),
-    totalFollowersGrowth: 0, // Would need historical data
+    totalFollowersGrowth: 0,
   }));
 }
 
@@ -262,19 +263,7 @@ export async function getTopHashtags(
   endDate: Date,
   limit = 20
 ): Promise<Array<{ tag: string; avgEngagement: number; count: number }>> {
-  const targets = await prisma.postTarget.findMany({
-    where: {
-      post: {
-        userId,
-        publishedAt: { gte: startDate, lte: endDate },
-      },
-      status: 'PUBLISHED',
-    },
-    include: {
-      post: { select: { content: true } },
-      metrics: { orderBy: { fetchedAt: 'desc' }, take: 1 },
-    },
-  });
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
 
   const tagMap = new Map<string, { engagement: number; count: number }>();
 
@@ -282,7 +271,7 @@ export async function getTopHashtags(
     const text = t.post.content || '';
     const hashtags = text.match(/#\w+/g) || [];
     const m = t.metrics[0];
-    const engagement = m ? m.likes + m.comments + m.shares : 0;
+    const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
 
     for (const tag of hashtags) {
       const lower = tag.toLowerCase();

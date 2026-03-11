@@ -13,7 +13,7 @@ const nextConfig = {
     ],
   },
   experimental: {
-    serverComponentsExternalPackages: ['pino', 'pino-pretty', 'bullmq'],
+    serverComponentsExternalPackages: ['pino', 'pino-pretty'],
   },
   async headers() {
     return [

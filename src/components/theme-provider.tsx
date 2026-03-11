@@ -26,13 +26,16 @@ function getSystemTheme(): 'light' | 'dark' {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('system');
+  const [theme, setThemeState] = useState<Theme>('light');
   const [resolved, setResolved] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
     const stored = localStorage.getItem('socialhub-theme') as Theme | null;
     if (stored) {
       setThemeState(stored);
+    } else {
+      setThemeState('light');
+      document.documentElement.classList.remove('dark');
     }
   }, []);
 

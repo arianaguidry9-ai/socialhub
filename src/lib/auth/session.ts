@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from './options';
-import { prisma } from '@/lib/db';
+import { usersRef } from '@/lib/db';
 import type { UserPlan } from '@/types';
 
 const DEBUG_USER = {
@@ -39,9 +39,7 @@ export async function isPremium(userId: string): Promise<boolean> {
   if (process.env.DEBUG_AUTH === 'true') {
     return true;
   }
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { plan: true },
-  });
+  const snap = await usersRef.doc(userId).get();
+  const user = snap.data();
   return user?.plan === 'PREMIUM';
 }

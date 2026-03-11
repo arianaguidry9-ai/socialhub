@@ -12,7 +12,7 @@ const Badge = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivEleme
     return (
       <div
         ref={ref}
-        className={cn('inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors', variants[variant], className)}
+        className={cn('inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition-colors', variants[variant], className)}
         {...props}
       />
     );

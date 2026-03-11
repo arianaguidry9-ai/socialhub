@@ -1,8 +1,7 @@
-import { Queue, type ConnectionOptions } from 'bullmq';
-import { redis } from '@/lib/redis';
+import { jobsRef, generateId } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
-/** BullMQ queue names. */
+/** Queue names. */
 export const QUEUE_NAMES = {
   POST_PUBLISH: 'post-publish',
   METRICS_FETCH: 'metrics-fetch',
@@ -10,80 +9,72 @@ export const QUEUE_NAMES = {
   EMAIL_NOTIFY: 'email-notify',
 } as const;
 
-/** Default queue connection config (lazy). */
-function getConnection() {
-  return { connection: redis as unknown as ConnectionOptions };
+interface JobOptions {
+  delay?: number;
+  priority?: number;
+  jobId?: string;
+  attempts?: number;
 }
 
-/** Lazy queue singleton cache. */
-const queues: Record<string, Queue> = {};
+/** Add a job to the Firestore-based queue. */
+async function addJob(queue: string, name: string, data: Record<string, any>, opts: JobOptions = {}) {
+  const id = opts.jobId || generateId();
+  const processAfter = new Date(Date.now() + (opts.delay || 0));
 
-function getQueue(name: string, opts: Record<string, unknown> = {}): Queue {
-  if (!queues[name]) {
-    queues[name] = new Queue(name, { ...getConnection(), ...opts });
+  await jobsRef.doc(id).set({
+    queue,
+    name,
+    data,
+    status: 'pending',
+    priority: opts.priority ?? 10,
+    attempts: 0,
+    maxAttempts: opts.attempts ?? 3,
+    error: null,
+    processAfter,
+    createdAt: new Date(),
+    completedAt: null,
+  });
+
+  logger.info({ queue, name, id, processAfter }, 'Job added to queue');
+  return id;
+}
+
+/** Remove a job from the queue. */
+async function removeJob(jobId: string) {
+  const doc = jobsRef.doc(jobId);
+  const snap = await doc.get();
+  if (snap.exists) {
+    await doc.delete();
+    logger.info({ jobId }, 'Job removed from queue');
   }
-  return queues[name];
 }
 
-/** Post publishing queue — processes scheduled posts. */
+/** Post publishing queue. */
 export const postPublishQueue = {
-  get queue() {
-    return getQueue(QUEUE_NAMES.POST_PUBLISH, {
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: { count: 1000 },
-        removeOnFail: { count: 5000 },
-      },
-    });
+  add: (name: string, data: Record<string, any>, opts?: JobOptions) =>
+    addJob(QUEUE_NAMES.POST_PUBLISH, name, data, { attempts: 3, ...opts }),
+  getJob: async (jobId: string) => {
+    const snap = await jobsRef.doc(jobId).get();
+    return snap.exists ? { id: snap.id, ...snap.data(), remove: () => removeJob(snap.id) } : null;
   },
-  add: (...args: Parameters<Queue['add']>) => postPublishQueue.queue.add(...args),
-  getJob: (...args: Parameters<Queue['getJob']>) => postPublishQueue.queue.getJob(...args),
 };
 
-/** Metrics fetching queue — fetches engagement metrics periodically. */
+/** Metrics fetching queue. */
 export const metricsFetchQueue = {
-  get queue() {
-    return getQueue(QUEUE_NAMES.METRICS_FETCH, {
-      defaultJobOptions: {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 1000 },
-      },
-    });
-  },
-  add: (...args: Parameters<Queue['add']>) => metricsFetchQueue.queue.add(...args),
+  add: (name: string, data: Record<string, any>, opts?: JobOptions) =>
+    addJob(QUEUE_NAMES.METRICS_FETCH, name, data, { attempts: 2, ...opts }),
 };
 
-/** Token refresh queue — refreshes expiring OAuth tokens. */
+/** Token refresh queue. */
 export const tokenRefreshQueue = {
-  get queue() {
-    return getQueue(QUEUE_NAMES.TOKEN_REFRESH, {
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 30000 },
-        removeOnComplete: { count: 200 },
-        removeOnFail: { count: 500 },
-      },
-    });
-  },
-  add: (...args: Parameters<Queue['add']>) => tokenRefreshQueue.queue.add(...args),
+  add: (name: string, data: Record<string, any>, opts?: JobOptions) =>
+    addJob(QUEUE_NAMES.TOKEN_REFRESH, name, data, { attempts: 3, ...opts }),
 };
 
 /** Email notification queue. */
 export const emailNotifyQueue = {
-  get queue() {
-    return getQueue(QUEUE_NAMES.EMAIL_NOTIFY, {
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 5000 },
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 500 },
-      },
-    });
-  },
-  add: (...args: Parameters<Queue['add']>) => emailNotifyQueue.queue.add(...args),
+  add: (name: string, data: Record<string, any>, opts?: JobOptions) =>
+    addJob(QUEUE_NAMES.EMAIL_NOTIFY, name, data, { attempts: 3, ...opts }),
 };
 
 /**
@@ -91,7 +82,7 @@ export const emailNotifyQueue = {
  */
 export async function schedulePost(postTargetId: string, scheduledAt: Date, isPremium: boolean) {
   const delay = Math.max(0, scheduledAt.getTime() - Date.now());
-  const priority = isPremium ? 1 : 10; // Premium users get priority
+  const priority = isPremium ? 1 : 10;
 
   await postPublishQueue.add(
     'publish',
@@ -108,7 +99,7 @@ export async function schedulePost(postTargetId: string, scheduledAt: Date, isPr
 export async function unschedulePost(postTargetId: string) {
   const job = await postPublishQueue.getJob(`publish:${postTargetId}`);
   if (job) {
-    await job.remove();
+    await removeJob(job.id);
     logger.info({ postTargetId }, 'Post removed from queue');
   }
 }

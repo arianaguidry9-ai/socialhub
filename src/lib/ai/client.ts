@@ -35,16 +35,14 @@ export async function trackAiUsage(
   tokensIn: number,
   tokensOut: number
 ) {
-  // Dynamically import to avoid circular deps
-  const { prisma } = await import('@/lib/db');
-  await prisma.aiUsage.create({
-    data: {
-      userId,
-      feature: feature as any,
-      tokensIn,
-      tokensOut,
-      model: AI_MODEL,
-    },
+  const { aiUsageRef, generateId } = await import('@/lib/db');
+  await aiUsageRef.doc(generateId()).set({
+    userId,
+    feature,
+    tokensIn,
+    tokensOut,
+    model: AI_MODEL,
+    createdAt: new Date(),
   });
   logger.info({ userId, feature, tokensIn, tokensOut }, 'AI usage tracked');
 }
@@ -53,18 +51,16 @@ export async function trackAiUsage(
  * Check if user has exceeded their free tier AI usage for this month.
  */
 export async function checkAiRateLimit(userId: string, feature: string, monthlyLimit: number): Promise<boolean> {
-  const { prisma } = await import('@/lib/db');
+  const { aiUsageRef } = await import('@/lib/db');
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const count = await prisma.aiUsage.count({
-    where: {
-      userId,
-      feature: feature as any,
-      createdAt: { gte: startOfMonth },
-    },
-  });
+  const snap = await aiUsageRef
+    .where('userId', '==', userId)
+    .where('feature', '==', feature)
+    .where('createdAt', '>=', startOfMonth)
+    .get();
 
-  return count < monthlyLimit;
+  return snap.size < monthlyLimit;
 }

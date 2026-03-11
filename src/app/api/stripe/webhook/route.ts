@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { prisma } from '@/lib/db';
+import { usersRef } from '@/lib/db';
 import { stripe } from '@/lib/stripe/client';
 import { logger } from '@/lib/logger';
 import type Stripe from 'stripe';
@@ -34,12 +34,9 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.userId;
         if (userId) {
-          await prisma.user.update({
-            where: { id: userId },
-            data: {
-              plan: 'PREMIUM',
-              stripeCustomerId: session.customer as string,
-            },
+          await usersRef.doc(userId).update({
+            plan: 'PREMIUM',
+            stripeCustomerId: session.customer as string,
           });
           logger.info({ userId }, 'User upgraded to Premium');
         }
@@ -51,10 +48,10 @@ export async function POST(req: NextRequest) {
         const customerId = subscription.customer as string;
         const isActive = ['active', 'trialing'].includes(subscription.status);
 
-        await prisma.user.updateMany({
-          where: { stripeCustomerId: customerId },
-          data: { plan: isActive ? 'PREMIUM' : 'FREE' },
-        });
+        const snap = await usersRef.where('stripeCustomerId', '==', customerId).get();
+        const batch = usersRef.firestore.batch();
+        snap.docs.forEach((doc) => batch.update(doc.ref, { plan: isActive ? 'PREMIUM' : 'FREE' }));
+        await batch.commit();
 
         logger.info({ customerId, status: subscription.status }, 'Subscription updated');
         break;
@@ -64,10 +61,10 @@ export async function POST(req: NextRequest) {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
 
-        await prisma.user.updateMany({
-          where: { stripeCustomerId: customerId },
-          data: { plan: 'FREE' },
-        });
+        const snap = await usersRef.where('stripeCustomerId', '==', customerId).get();
+        const batch = usersRef.firestore.batch();
+        snap.docs.forEach((doc) => batch.update(doc.ref, { plan: 'FREE' }));
+        await batch.commit();
 
         logger.info({ customerId }, 'Subscription canceled — downgraded to Free');
         break;

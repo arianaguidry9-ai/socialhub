@@ -7,7 +7,7 @@ import {
   getPlatformComparison,
   getTopHashtags,
 } from '@/lib/analytics';
-import { prisma } from '@/lib/db';
+import { usersRef } from '@/lib/db';
 import { FREE_TIER_LIMITS } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -72,10 +72,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
 
     // Check plan for date window limits
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { plan: true },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
 
     const maxDays = user?.plan === 'PREMIUM' ? 365 * 5 : FREE_TIER_LIMITS.analyticsWindowDays;
     const requestedDays = Math.min(

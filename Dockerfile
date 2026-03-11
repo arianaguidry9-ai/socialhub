@@ -4,9 +4,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-COPY prisma ./prisma/
 RUN npm ci
-RUN npx prisma generate
 
 # Build
 FROM base AS builder
@@ -26,8 +24,6 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/prisma ./prisma
-COPY --from=deps /app/node_modules/.prisma ./node_modules/.prisma
 
 USER nextjs
 EXPOSE 3000

@@ -1,30 +1,3 @@
-import Redis from 'ioredis';
-import { logger } from './logger';
+// Redis replaced by Firebase Firestore. This stub prevents import errors.
+export const redis = null;
 
-const globalForRedis = globalThis as unknown as { redis: Redis };
-
-function createRedisClient(): Redis {
-  const url = process.env.REDIS_URL;
-  if (!url) {
-    throw new Error('REDIS_URL environment variable is required');
-  }
-  const client = new Redis(url, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  });
-  client.on('error', (err) => logger.error({ err }, 'Redis connection error'));
-  return client;
-}
-
-function getRedis(): Redis {
-  if (!globalForRedis.redis) {
-    globalForRedis.redis = createRedisClient();
-  }
-  return globalForRedis.redis;
-}
-
-export const redis = new Proxy({} as Redis, {
-  get(_target, prop, receiver) {
-    return Reflect.get(getRedis(), prop, receiver);
-  },
-});

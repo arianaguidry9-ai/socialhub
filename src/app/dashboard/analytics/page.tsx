@@ -140,19 +140,19 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground">Track your social media performance</p>
+          <h1 className="text-4xl font-bold tracking-tight">Analytics</h1>
+          <p className="mt-1 text-base text-muted-foreground">Track your social media performance</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <Select value={platform} onValueChange={setPlatform} placeholder="Platform" className="w-[170px]">
+          <Select value={platform} onValueChange={setPlatform} placeholder="Platform" className="w-[200px]">
             {PLATFORM_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
           </Select>
-          <Select value={days} onValueChange={setDays} placeholder="Time period" className="w-[160px]">
+          <Select value={days} onValueChange={setDays} placeholder="Time period" className="w-[200px]">
             {TIME_PERIODS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}

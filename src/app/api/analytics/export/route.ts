@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth/session';
-import { prisma } from '@/lib/db';
+import { usersRef, postsRef, postTargetsRef, socialAccountsRef, postMetricsRef } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 /** GET /api/analytics/export — Export analytics data as CSV. */
@@ -12,10 +12,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Premium only
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { plan: true },
-    });
+    const userSnap = await usersRef.doc(session.user.id).get();
+    const user = userSnap.data();
 
     if (user?.plan !== 'PREMIUM') {
       return NextResponse.json(
@@ -30,20 +28,45 @@ export async function GET(req: NextRequest) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const targets = await prisma.postTarget.findMany({
-      where: {
-        post: {
-          userId: session.user.id,
-          publishedAt: { gte: startDate },
-        },
-        status: 'PUBLISHED',
-      },
-      include: {
-        post: { select: { title: true, content: true, publishedAt: true } },
-        socialAccount: { select: { platform: true, username: true } },
-        metrics: { orderBy: { fetchedAt: 'desc' }, take: 1 },
-      },
-    });
+    // Get user's published posts in date range
+    const postsSnap = await postsRef
+      .where('userId', '==', session.user.id)
+      .where('publishedAt', '>=', startDate)
+      .get();
+
+    const postIds = postsSnap.docs.map((d) => d.id);
+    const postsMap = new Map(postsSnap.docs.map((d) => [d.id, d.data()]));
+
+    // Get published targets (batch by 30 for Firestore 'in' limit)
+    const targetDocs: Array<{ id: string; [key: string]: any }> = [];
+    for (let i = 0; i < postIds.length; i += 30) {
+      const batch = postIds.slice(i, i + 30);
+      const snap = await postTargetsRef
+        .where('postId', 'in', batch)
+        .where('status', '==', 'PUBLISHED')
+        .get();
+      snap.docs.forEach((d) => targetDocs.push({ id: d.id, ...d.data() }));
+    }
+
+    // Batch-fetch social accounts
+    const saIds = [...new Set(targetDocs.map((t) => t.socialAccountId))];
+    const saMap = new Map<string, Record<string, any>>();
+    for (let i = 0; i < saIds.length; i += 30) {
+      const batch = saIds.slice(i, i + 30);
+      const snap = await socialAccountsRef.where('__name__', 'in', batch).get();
+      snap.docs.forEach((d) => saMap.set(d.id, d.data()));
+    }
+
+    // Fetch latest metric for each target
+    const metricsMap = new Map<string, Record<string, any>>();
+    for (const t of targetDocs) {
+      const mSnap = await postMetricsRef
+        .where('postTargetId', '==', t.id)
+        .orderBy('fetchedAt', 'desc')
+        .limit(1)
+        .get();
+      if (!mSnap.empty) metricsMap.set(t.id, mSnap.docs[0].data());
+    }
 
     // Build CSV
     const headers = [
@@ -51,13 +74,15 @@ export async function GET(req: NextRequest) {
       'Impressions', 'Likes', 'Comments', 'Shares', 'Saves', 'Clicks',
     ];
 
-    const rows = targets.map((t) => {
-      const m = t.metrics[0];
+    const rows = targetDocs.map((t) => {
+      const post = postsMap.get(t.postId) || {} as any;
+      const sa = saMap.get(t.socialAccountId) || {} as any;
+      const m = metricsMap.get(t.id);
       return [
-        t.socialAccount.platform,
-        t.socialAccount.username,
-        t.post.publishedAt?.toISOString() || '',
-        (t.post.title || '').replace(/"/g, '""'),
+        sa.platform || '',
+        sa.username || '',
+        post.publishedAt?.toDate?.()?.toISOString?.() || '',
+        (post.title || '').replace(/"/g, '""'),
         t.publishedUrl || '',
         m?.impressions || 0,
         m?.likes || 0,
