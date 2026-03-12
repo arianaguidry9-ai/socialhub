@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectItem } from '@/components/ui/select';
 import { PlatformFilterTabs, PlatformEmptyState } from '@/components/analytics/PlatformFilterTabs';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
-import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2 } from 'lucide-react';
+import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2, Users, UserCheck, FileText, BookMarked, MessageCircle } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -124,6 +124,15 @@ export default function AnalyticsPage() {
     },
   });
 
+  // Live data from the connected platform (Twitter right now)
+  const showLiveTwitter = platform === 'all' || platform === 'twitter';
+  const { data: liveTwitter, isLoading: liveLoading } = useQuery({
+    queryKey: ['live-twitter'],
+    queryFn: () => fetch('/api/analytics/platform?platform=twitter').then((r) => r.json()),
+    enabled: showLiveTwitter,
+    staleTime: 2 * 60 * 1000,
+  });
+
   const handleExport = () => {
     window.open(`/api/analytics/export?days=${days}${platform !== 'all' ? `&platform=${platform}` : ''}`, '_blank');
   };
@@ -162,6 +171,92 @@ export default function AnalyticsPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── Live X / Twitter Account Stats ─────────────────────────── */}
+      {showLiveTwitter && !liveTwitter?.error && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-3 pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white text-sm font-bold">𝕏</div>
+            <div>
+              <CardTitle className="text-base">
+                {liveLoading ? 'Loading…' : liveTwitter?.profile ? `@${liveTwitter.profile.username}` : 'X / Twitter Live Stats'}
+              </CardTitle>
+              {liveTwitter?.profile?.description && (
+                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{liveTwitter.profile.description}</p>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Profile stats */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: 'Followers',    value: liveTwitter?.profile?.followers,  icon: Users,     color: 'text-blue-500' },
+                { label: 'Following',    value: liveTwitter?.profile?.following,  icon: UserCheck, color: 'text-green-500' },
+                { label: 'Total Tweets', value: liveTwitter?.profile?.tweetCount, icon: FileText,  color: 'text-purple-500' },
+                { label: 'Listed',       value: liveTwitter?.profile?.listedCount,icon: TrendingUp,color: 'text-orange-500' },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                  <s.icon className={`h-4 w-4 ${s.color} shrink-0`} />
+                  <div>
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                    <p className="text-xl font-bold">{liveLoading ? '…' : (s.value?.toLocaleString() ?? '—')}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Recent-tweet engagement totals */}
+            {(liveTwitter?.recentTweets?.length ?? 0) > 0 && (
+              <>
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Last {liveTwitter.recentTweets.length} tweets — cumulative engagement
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {[
+                      { label: 'Likes',     value: liveTwitter.totals?.likes,     icon: Heart,         color: 'text-pink-500' },
+                      { label: 'Retweets',  value: liveTwitter.totals?.retweets,  icon: Repeat2,       color: 'text-green-500' },
+                      { label: 'Replies',   value: liveTwitter.totals?.replies,   icon: MessageCircle, color: 'text-blue-500' },
+                      { label: 'Bookmarks', value: liveTwitter.totals?.bookmarks, icon: BookMarked,    color: 'text-purple-500' },
+                    ].map((s) => (
+                      <div key={s.label} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                        <s.icon className={`h-4 w-4 ${s.color} shrink-0`} />
+                        <div>
+                          <p className="text-xs text-muted-foreground">{s.label}</p>
+                          <p className="text-xl font-bold">{s.value?.toLocaleString() ?? '—'}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Per-tweet breakdown */}
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent Tweets</p>
+                  <div className="space-y-2">
+                    {liveTwitter.recentTweets.map((t: any) => (
+                      <a
+                        key={t.id}
+                        href={t.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-start justify-between gap-4 rounded-lg border border-border/40 p-3 transition-colors hover:bg-accent/40"
+                      >
+                        <p className="flex-1 text-sm line-clamp-2">{t.text}</p>
+                        <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-pink-400" />{t.likes}</span>
+                          <span className="flex items-center gap-1"><Repeat2 className="h-3 w-3 text-green-400" />{t.retweets}</span>
+                          <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-blue-400" />{t.replies}</span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

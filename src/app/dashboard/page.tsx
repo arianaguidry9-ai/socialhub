@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectItem } from '@/components/ui/select';
-import { BarChart3, Calendar, TrendingUp, Users, Heart, Eye, MessageSquare } from 'lucide-react';
+import { BarChart3, Calendar, TrendingUp, Users, Heart, Eye, MessageSquare, Repeat2, BookMarked, MessageCircle, UserCheck, FileText } from 'lucide-react';
 
 const TIME_PERIODS = [
   { label: 'Past 24 Hours', value: '1' },
@@ -33,6 +33,18 @@ export default function DashboardPage() {
         accounts: await accountsRes.json(),
       };
     },
+  });
+
+  // Fetch live Twitter stats if a Twitter account is connected
+  const twitterAccount = Array.isArray(data?.accounts)
+    ? data.accounts.find((a: any) => a.platform === 'TWITTER')
+    : null;
+
+  const { data: liveTwitter, isLoading: liveLoading } = useQuery({
+    queryKey: ['live-twitter'],
+    queryFn: () => fetch('/api/analytics/platform?platform=twitter').then((r) => r.json()),
+    enabled: !!twitterAccount,
+    staleTime: 2 * 60 * 1000, // 2 min
   });
 
   const stats = data?.analytics?.overview;
@@ -72,6 +84,94 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Live Twitter / X Account Stats */}
+      {twitterAccount && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-3 pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white text-sm font-bold">𝕏</div>
+            <div>
+              <CardTitle className="text-base">
+                {liveLoading ? 'Loading…' : liveTwitter?.profile ? `@${liveTwitter.profile.username}` : 'X / Twitter'}
+              </CardTitle>
+              {liveTwitter?.profile?.description && (
+                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-1">{liveTwitter.profile.description}</p>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {liveTwitter?.error ? (
+              <p className="text-sm text-destructive">{liveTwitter.error}</p>
+            ) : (
+              <>
+                {/* Profile stat row */}
+                <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    { label: 'Followers',   value: liveTwitter?.profile?.followers,  icon: Users },
+                    { label: 'Following',   value: liveTwitter?.profile?.following,  icon: UserCheck },
+                    { label: 'Total Tweets',value: liveTwitter?.profile?.tweetCount, icon: FileText },
+                    { label: 'Listed',      value: liveTwitter?.profile?.listedCount,icon: BarChart3 },
+                  ].map((s) => (
+                    <div key={s.label} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                      <s.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">{s.label}</p>
+                        <p className="text-lg font-bold">{liveLoading ? '…' : (s.value?.toLocaleString() ?? '—')}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Recent tweets engagement row */}
+                {(liveTwitter?.recentTweets?.length ?? 0) > 0 && (
+                  <>
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Last {liveTwitter.recentTweets.length} tweets (totals)
+                    </p>
+                    <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {[
+                        { label: 'Likes',     value: liveTwitter.totals?.likes,     icon: Heart,         color: 'text-pink-500' },
+                        { label: 'Retweets',  value: liveTwitter.totals?.retweets,  icon: Repeat2,       color: 'text-green-500' },
+                        { label: 'Replies',   value: liveTwitter.totals?.replies,   icon: MessageCircle, color: 'text-blue-500' },
+                        { label: 'Bookmarks', value: liveTwitter.totals?.bookmarks, icon: BookMarked,    color: 'text-purple-500' },
+                      ].map((s) => (
+                        <div key={s.label} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
+                          <s.icon className={`h-4 w-4 ${s.color} shrink-0`} />
+                          <div>
+                            <p className="text-xs text-muted-foreground">{s.label}</p>
+                            <p className="text-lg font-bold">{s.value?.toLocaleString() ?? '—'}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Recent tweets list */}
+                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent Tweets</p>
+                    <div className="space-y-2">
+                      {liveTwitter.recentTweets.slice(0, 5).map((t: any) => (
+                        <a
+                          key={t.id}
+                          href={t.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-start justify-between gap-4 rounded-lg border border-border/40 p-3 transition-colors hover:bg-accent/40"
+                        >
+                          <p className="text-sm line-clamp-2 flex-1">{t.text}</p>
+                          <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-pink-400" />{t.likes}</span>
+                            <span className="flex items-center gap-1"><Repeat2 className="h-3 w-3 text-green-400" />{t.retweets}</span>
+                            <span className="flex items-center gap-1"><MessageCircle className="h-3 w-3 text-blue-400" />{t.replies}</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Posts */}
       <Card>

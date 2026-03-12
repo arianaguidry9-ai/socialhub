@@ -49,21 +49,23 @@ export class TwitterConnector extends BasePlatformConnector {
   }
 
   async fetchMetrics(tokens: PlatformTokens, platformPostId: string): Promise<PostMetrics> {
+    // public_metrics are available to all API access levels.
+    // non_public_metrics / organic_metrics require Twitter Elevated access
+    // and return 403 for most developer apps — so we omit them.
     const data = await this.apiRequest<any>(
-      `${TWITTER_API}/tweets/${platformPostId}?tweet.fields=public_metrics,non_public_metrics,organic_metrics`,
+      `${TWITTER_API}/tweets/${platformPostId}?tweet.fields=public_metrics`,
       { accessToken: tokens.accessToken }
     );
 
     const pub = data.data?.public_metrics || {};
-    const nonPub = data.data?.non_public_metrics || {};
 
     return {
-      impressions: nonPub.impression_count || pub.impression_count || 0,
-      likes: pub.like_count || 0,
-      comments: pub.reply_count || 0,
-      shares: pub.retweet_count + (pub.quote_count || 0),
-      saves: pub.bookmark_count || 0,
-      clicks: nonPub.url_link_clicks || 0,
+      impressions: pub.impression_count || 0,
+      likes:       pub.like_count       || 0,
+      comments:    pub.reply_count      || 0,
+      shares:      (pub.retweet_count   || 0) + (pub.quote_count || 0),
+      saves:       pub.bookmark_count   || 0,
+      clicks:      0, // url_link_clicks requires non_public_metrics (Elevated access)
     };
   }
 

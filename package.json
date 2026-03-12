@@ -4,7 +4,7 @@
   "private": true,
   "description": "Full-featured social media management platform with scheduling, analytics, and AI-powered content tools",
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently --names \"next,worker\" --prefix-colors \"cyan,yellow\" \"next dev\" \"tsx src/lib/queue/worker.ts\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -65,6 +65,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.18",
     "jest": "^29.7.0",

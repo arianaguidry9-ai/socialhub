@@ -24,6 +24,15 @@ export const connectAccountSchema = z.object({
   platform: z.enum(['reddit', 'twitter', 'instagram', 'linkedin']),
 });
 
+export const registerSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(100),
+  email: z.string().email('Invalid email address'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(128),
+});
+
 export const aiCaptionSchema = z.object({
   topic: z.string().min(1).max(1000),
   platform: z.enum(['reddit', 'twitter', 'instagram', 'linkedin']),
@@ -39,5 +48,6 @@ export const redditAnalyzeSchema = z.object({
 
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type ConnectAccountInput = z.infer<typeof connectAccountSchema>;
+export type RegisterInput = z.infer<typeof registerSchema>;
 export type AiCaptionInput = z.infer<typeof aiCaptionSchema>;
 export type RedditAnalyzeInput = z.infer<typeof redditAnalyzeSchema>;

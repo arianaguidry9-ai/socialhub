@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -42,6 +43,10 @@ export function Sidebar() {
   const { data: session } = useSession();
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const { resolved, setTheme } = useTheme();
+  // Prevent hydration mismatch: useSession and useTheme return different values
+  // on the server vs the client. Only render user-specific content after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const closeSidebarOnMobile = () => {
     if (window.innerWidth < 1024 && sidebarOpen) toggleSidebar();
@@ -119,11 +124,11 @@ export function Sidebar() {
           {/* User + Sign Out */}
           <div className="mb-4 flex items-center gap-3 rounded-xl px-3 py-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-              {session?.user?.name?.charAt(0) || 'U'}
+              {mounted ? (session?.user?.name?.charAt(0) ?? '?') : '?'}
             </div>
             <div className="flex-1 truncate">
-              <p className="text-sm font-medium">{session?.user?.name || 'User'}</p>
-              <p className="text-xs text-muted-foreground">{session?.user?.email}</p>
+              <p className="text-sm font-medium">{mounted ? (session?.user?.name ?? 'User') : 'User'}</p>
+              <p className="text-xs text-muted-foreground">{mounted ? session?.user?.email : ''}</p>
             </div>
             <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-9 w-9">
               <LogOut className="h-4 w-4" />
@@ -136,7 +141,7 @@ export function Sidebar() {
             className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground"
             title={resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
-            {resolved === 'dark' ? (
+            {mounted && resolved === 'dark' ? (
               <>
                 <Sun className="h-5 w-5 text-amber-400" />
                 <span>Light Mode</span>
