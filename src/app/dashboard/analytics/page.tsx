@@ -9,7 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectItem } from '@/components/ui/select';
 import { PlatformFilterTabs, PlatformEmptyState } from '@/components/analytics/PlatformFilterTabs';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
-import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2, Users, UserCheck, FileText, BookMarked, MessageCircle, AlertTriangle } from 'lucide-react';
+import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2, Users, UserCheck, FileText, BookMarked, MessageCircle, AlertTriangle, HelpCircle } from 'lucide-react';
+import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogClose } from '@/components/ui/dialog';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -113,6 +114,7 @@ export default function AnalyticsPage() {
   const [contentPlatform, setContentPlatform] = useState('all');
   const [heatmapPlatform, setHeatmapPlatform] = useState('all');
   const [hashtagPlatform, setHashtagPlatform] = useState('all');
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['analytics', days, platform],
@@ -152,6 +154,17 @@ export default function AnalyticsPage() {
 
   // True when the user has actually published posts through SocialHub
   const hasSocialHubData = (data?.overview?.totalPosts ?? 0) > 0;
+
+  // Build live Twitter metrics for PlatformMetricCards fallback
+  const livePlatformMetrics: Record<string, any> = {};
+  if (liveTwitter?.profile && !hasSocialHubData) {
+    livePlatformMetrics.twitter = {
+      impressions: liveTwitter.profile.followers ?? 0,
+      retweets: liveTwitter.totals?.retweets ?? 0,
+      replies: liveTwitter.totals?.replies ?? 0,
+      likes: liveTwitter.totals?.likes ?? 0,
+    };
+  }
 
   // Platforms tab: only needs profile data, not recent tweets
   const livePlatformFallback =
@@ -264,6 +277,9 @@ export default function AnalyticsPage() {
           <p className="mt-1 text-base text-muted-foreground">Track your social media performance</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)} title="What do these metrics mean?">
+            <HelpCircle className="h-5 w-5" />
+          </Button>
           <Select value={platform} onValueChange={setPlatform} placeholder="Platform" className="w-[200px]">
             {PLATFORM_OPTIONS.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
@@ -279,6 +295,33 @@ export default function AnalyticsPage() {
           </Button>
         </div>
       </div>
+
+      {/* Help Dialog */}
+      <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
+        <DialogClose onClose={() => setHelpOpen(false)} />
+        <DialogHeader>
+          <DialogTitle>Metric Definitions</DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <dl className="space-y-3 text-sm">
+            {[
+              ['Total Impressions', 'How many people could see your content. Uses follower reach when no post-level data is available.'],
+              ['Total Engagement', 'Sum of likes, retweets, replies, and other interactions across your recent posts.'],
+              ['Avg Engagement Rate', 'Engagement divided by your follower count, shown as a percentage.'],
+              ['Posts Published', 'Total number of posts on your account.'],
+              ['Platform Performance', 'Side-by-side comparison of engagement and reach across your connected platforms.'],
+              ['Content Types', 'Breaks down performance by post format (text, image, video, etc.).'],
+              ['Posting Heatmap', 'Shows which day and hour combinations get the most engagement.'],
+              ['Top Hashtags', 'Your best-performing hashtags ranked by average engagement.'],
+            ].map(([term, desc]) => (
+              <div key={term}>
+                <dt className="font-medium">{term}</dt>
+                <dd className="text-muted-foreground">{desc}</dd>
+              </div>
+            ))}
+          </dl>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Live X / Twitter Account Stats ─────────────────────────── */}
       {showLiveTwitter && !liveTwitter?.error && (
@@ -381,13 +424,13 @@ export default function AnalyticsPage() {
             title: 'Total Engagement',
             value: hasSocialHubData
               ? data.overview.totalEngagement
-              : (liveEngagementTotal > 0 ? liveEngagementTotal : undefined),
+              : (liveTwitter?.profile ? liveEngagementTotal : undefined),
           },
           {
-            title: 'Avg CTR',
+            title: 'Avg Engagement Rate',
             value: hasSocialHubData
               ? `${data.overview.avgCTR ?? 0}%`
-              : (liveEngagementTotal > 0 && liveTwitter?.profile?.followers
+              : (liveTwitter?.profile?.followers
                   ? `${(liveEngagementTotal / liveTwitter.profile.followers * 100).toFixed(1)}%`
                   : undefined),
           },
@@ -474,10 +517,10 @@ export default function AnalyticsPage() {
 
                 /* Platform-specific metric cards */
                 if (contentPlatform !== 'all' && config) {
-                  const platformData = data?.platformMetrics?.[contentPlatform];
+                  const platformMetricData = data?.platformMetrics?.[contentPlatform] ?? livePlatformMetrics[contentPlatform];
                   return (
                     <div>
-                      <PlatformMetricCards platform={contentPlatform} data={platformData} />
+                      <PlatformMetricCards platform={contentPlatform} data={platformMetricData} />
                       {items.length ? (
                         <ResponsiveContainer width="100%" height={300}>
                           <BarChart data={items.length ? items : config.contentTypes.map((t) => ({ type: t, avgEngagement: 0, count: 0 }))}>
@@ -542,7 +585,7 @@ export default function AnalyticsPage() {
 
                 /* Platform-specific metric cards above heatmap */
                 const metricCards = heatmapPlatform !== 'all' && config ? (
-                  <PlatformMetricCards platform={heatmapPlatform} data={data?.platformMetrics?.[heatmapPlatform]} />
+                  <PlatformMetricCards platform={heatmapPlatform} data={data?.platformMetrics?.[heatmapPlatform] ?? livePlatformMetrics[heatmapPlatform]} />
                 ) : null;
 
                 return items.length ? (
@@ -631,7 +674,7 @@ export default function AnalyticsPage() {
                   return (
                     <div>
                       {hashtagPlatform !== 'all' && config && (
-                        <PlatformMetricCards platform={hashtagPlatform} data={data?.platformMetrics?.[hashtagPlatform]} />
+                        <PlatformMetricCards platform={hashtagPlatform} data={data?.platformMetrics?.[hashtagPlatform] ?? livePlatformMetrics[hashtagPlatform]} />
                       )}
                       <PlatformEmptyState platform={hashtagPlatform} />
                     </div>
@@ -641,7 +684,7 @@ export default function AnalyticsPage() {
                 return (
                   <div>
                     {hashtagPlatform !== 'all' && config && (
-                      <PlatformMetricCards platform={hashtagPlatform} data={data?.platformMetrics?.[hashtagPlatform]} />
+                      <PlatformMetricCards platform={hashtagPlatform} data={data?.platformMetrics?.[hashtagPlatform] ?? livePlatformMetrics[hashtagPlatform]} />
                     )}
 
                     {/* Chart view for individual platforms */}
