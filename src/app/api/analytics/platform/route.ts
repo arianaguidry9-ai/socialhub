@@ -113,6 +113,7 @@ async function fetchTwitterLiveData(token: string, knownUserId: string | null) {
 
   // Step 2: Fetch the last 20 tweets with public metrics
   let recentTweets: any[] = [];
+  let tweetsFetched = false;
   if (userId) {
     try {
       const tweetsRes = await twitterGet<any>(
@@ -132,6 +133,7 @@ async function fetchTwitterLiveData(token: string, knownUserId: string | null) {
         impressions: t.public_metrics?.impression_count ?? null,
         url: `https://x.com/${profile?.username}/status/${t.id}`,
       }));
+      tweetsFetched = true;
     } catch (err) {
       logger.warn({ err }, 'fetchTwitterLiveData: tweets fetch failed; returning profile only');
     }
@@ -165,6 +167,7 @@ async function fetchTwitterLiveData(token: string, knownUserId: string | null) {
       listedCount:   metrics.listed_count     ?? 0,
     },
     recentTweets,
+    tweetsFetched,
     totals,
   };
 }

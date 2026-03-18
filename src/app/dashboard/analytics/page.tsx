@@ -148,6 +148,7 @@ export default function AnalyticsPage() {
   };
 
   const liveTweetCount = liveTwitter?.recentTweets?.length ?? 0;
+  const liveTweetsFetched = liveTwitter?.tweetsFetched === true;
   const liveEngagementTotal = liveTwitter?.totals
     ? (liveTwitter.totals.likes ?? 0) + (liveTwitter.totals.retweets ?? 0) + (liveTwitter.totals.replies ?? 0)
     : 0;
@@ -160,9 +161,12 @@ export default function AnalyticsPage() {
   if (liveTwitter?.profile && !hasSocialHubData) {
     livePlatformMetrics.twitter = {
       impressions: liveTwitter.profile.followers ?? 0,
-      retweets: liveTwitter.totals?.retweets ?? 0,
-      replies: liveTwitter.totals?.replies ?? 0,
-      likes: liveTwitter.totals?.likes ?? 0,
+      // Only show tweet-based metrics when tweets actually loaded
+      ...(liveTweetsFetched ? {
+        retweets: liveTwitter.totals?.retweets ?? 0,
+        replies: liveTwitter.totals?.replies ?? 0,
+        likes: liveTwitter.totals?.likes ?? 0,
+      } : {}),
     };
   }
 
@@ -424,13 +428,13 @@ export default function AnalyticsPage() {
             title: 'Total Engagement',
             value: hasSocialHubData
               ? data.overview.totalEngagement
-              : (liveTwitter?.profile ? liveEngagementTotal : undefined),
+              : (liveTweetsFetched ? liveEngagementTotal : undefined),
           },
           {
             title: 'Avg Engagement Rate',
             value: hasSocialHubData
               ? `${data.overview.avgCTR ?? 0}%`
-              : (liveTwitter?.profile?.followers
+              : (liveTweetsFetched && liveTwitter?.profile?.followers
                   ? `${(liveEngagementTotal / liveTwitter.profile.followers * 100).toFixed(1)}%`
                   : undefined),
           },
