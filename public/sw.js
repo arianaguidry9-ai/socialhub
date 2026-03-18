@@ -1,6 +1,6 @@
 /// SocialHub Service Worker — lightweight cache-first for static, network-first for API
 
-const CACHE_NAME = 'socialhub-v1';
+const CACHE_NAME = 'socialhub-v2';
 const STATIC_ASSETS = [
   '/favicon.svg',
   '/icon-192.png',
@@ -44,17 +44,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets & app shell: cache-first
+  // Static assets & app shell: network-first (prevents stale webpack chunks)
   if (
     url.pathname.startsWith('/_next/static/') ||
     STATIC_ASSETS.includes(url.pathname)
   ) {
     event.respondWith(
-      caches.match(request).then((cached) => cached || fetch(request).then((res) => {
+      fetch(request).then((res) => {
         const clone = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
         return res;
-      }))
+      }).catch(() => caches.match(request))
     );
     return;
   }

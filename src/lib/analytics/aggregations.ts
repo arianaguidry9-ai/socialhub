@@ -6,6 +6,7 @@ interface TimeHeatmapEntry {
   hour: number; // 0-23
   avgEngagement: number;
   postCount: number;
+  platform: string;
 }
 
 interface ContentTypePerformance {
@@ -13,6 +14,7 @@ interface ContentTypePerformance {
   avgEngagement: number;
   avgImpressions: number;
   postCount: number;
+  platform: string;
 }
 
 interface PlatformComparison {
@@ -27,7 +29,12 @@ interface PlatformComparison {
  * Fetch published post targets with their related data for a user within a date range.
  * This is the shared data-fetching logic used by all aggregation functions.
  */
-async function getPublishedTargetsWithData(userId: string, startDate: Date, endDate: Date) {
+async function getPublishedTargetsWithData(
+  userId: string,
+  startDate: Date,
+  endDate: Date,
+  platform?: string
+) {
   // Step 1: Get user's published posts in date range
   const postsSnap = await postsRef
     .where('userId', '==', userId)
@@ -71,8 +78,8 @@ async function getPublishedTargetsWithData(userId: string, startDate: Date, endD
     }
   }
 
-  // Assemble
-  return targetDocs.map((t) => ({
+  // Assemble and apply optional platform filter
+  const assembled = targetDocs.map((t) => ({
     ...t,
     postId: t.postId as string,
     socialAccountId: t.socialAccountId as string,
@@ -81,13 +88,22 @@ async function getPublishedTargetsWithData(userId: string, startDate: Date, endD
     socialAccount: socialAccounts.get(t.socialAccountId) || null,
     metrics: metricsMap.has(t.id) ? [metricsMap.get(t.id)!] : [],
   }));
+
+  if (!platform) return assembled;
+  const normalized = platform.toUpperCase();
+  return assembled.filter((t) => (t.socialAccount?.platform ?? '').toUpperCase() === normalized);
 }
 
 /**
  * Aggregate analytics data for a user within a date range.
  */
-export async function getUserAnalytics(userId: string, startDate: Date, endDate: Date) {
-  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
+export async function getUserAnalytics(
+  userId: string,
+  startDate: Date,
+  endDate: Date,
+  platform?: string
+) {
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate, platform);
 
   let totalImpressions = 0;
   let totalLikes = 0;
@@ -137,9 +153,10 @@ export async function getUserAnalytics(userId: string, startDate: Date, endDate:
 export async function getPostingHeatmap(
   userId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  platform?: string
 ): Promise<TimeHeatmapEntry[]> {
-  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate, platform);
 
   const grid = new Map<string, { totalEngagement: number; count: number }>();
 
@@ -150,7 +167,8 @@ export async function getPostingHeatmap(
     const d = new Date(dt);
     const dayOfWeek = d.getUTCDay();
     const hour = d.getUTCHours();
-    const key = `${dayOfWeek}-${hour}`;
+    const platformKey = String(t.socialAccount?.platform || 'unknown').toLowerCase();
+    const key = `${dayOfWeek}-${hour}-${platformKey}`;
 
     const m = t.metrics[0];
     const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
@@ -164,12 +182,13 @@ export async function getPostingHeatmap(
 
   const heatmap: TimeHeatmapEntry[] = [];
   for (const [key, val] of grid) {
-    const [day, hour] = key.split('-').map(Number);
+    const [day, hour, platformName] = key.split('-');
     heatmap.push({
-      dayOfWeek: day,
-      hour,
+      dayOfWeek: Number(day),
+      hour: Number(hour),
       avgEngagement: Math.round(val.totalEngagement / val.count),
       postCount: val.count,
+      platform: platformName,
     });
   }
 
@@ -182,40 +201,50 @@ export async function getPostingHeatmap(
 export async function getContentTypePerformance(
   userId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  platform?: string
 ): Promise<ContentTypePerformance[]> {
-  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate, platform);
 
-  const buckets: Record<string, { engagement: number; impressions: number; count: number }> = {
-    text: { engagement: 0, impressions: 0, count: 0 },
-    image: { engagement: 0, impressions: 0, count: 0 },
-    video: { engagement: 0, impressions: 0, count: 0 },
-    link: { engagement: 0, impressions: 0, count: 0 },
-  };
+  const buckets = new Map<string, { engagement: number; impressions: number; count: number; platform: string; type: ContentTypePerformance['type'] }>();
 
   for (const t of targets) {
     const mediaUrls = t.post.mediaUrls || [];
-    let type = 'text';
+    let type: ContentTypePerformance['type'] = 'text';
     if (mediaUrls.some((u: string) => /\.(mp4|mov|webm)/i.test(u))) type = 'video';
     else if (mediaUrls.length > 0) type = 'image';
     else if (t.post.link) type = 'link';
+    const platformName = String(t.socialAccount?.platform || 'unknown').toLowerCase();
+    const bucketKey = `${platformName}:${type}`;
 
     const m = t.metrics[0];
     const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
     const impressions = m?.impressions || 0;
 
-    buckets[type].engagement += engagement;
-    buckets[type].impressions += impressions;
-    buckets[type].count += 1;
+    const existing = buckets.get(bucketKey) || {
+      engagement: 0,
+      impressions: 0,
+      count: 0,
+      platform: platformName,
+      type,
+    };
+
+    buckets.set(bucketKey, {
+      ...existing,
+      engagement: existing.engagement + engagement,
+      impressions: existing.impressions + impressions,
+      count: existing.count + 1,
+    });
   }
 
-  return Object.entries(buckets)
-    .filter(([_, v]) => v.count > 0)
-    .map(([type, v]) => ({
-      type: type as ContentTypePerformance['type'],
+  return Array.from(buckets.values())
+    .filter((v) => v.count > 0)
+    .map((v) => ({
+      type: v.type,
       avgEngagement: Math.round(v.engagement / v.count),
       avgImpressions: Math.round(v.impressions / v.count),
       postCount: v.count,
+      platform: v.platform,
     }));
 }
 
@@ -225,9 +254,10 @@ export async function getContentTypePerformance(
 export async function getPlatformComparison(
   userId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  platform?: string
 ): Promise<PlatformComparison[]> {
-  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate, platform);
 
   const byPlatform = new Map<string, { engagement: number; impressions: number; count: number }>();
 
@@ -261,33 +291,38 @@ export async function getTopHashtags(
   userId: string,
   startDate: Date,
   endDate: Date,
-  limit = 20
-): Promise<Array<{ tag: string; avgEngagement: number; count: number }>> {
-  const targets = await getPublishedTargetsWithData(userId, startDate, endDate);
+  limit = 20,
+  platform?: string
+): Promise<Array<{ tag: string; avgEngagement: number; count: number; platform: string }>> {
+  const targets = await getPublishedTargetsWithData(userId, startDate, endDate, platform);
 
-  const tagMap = new Map<string, { engagement: number; count: number }>();
+  const tagMap = new Map<string, { engagement: number; count: number; platform: string }>();
 
   for (const t of targets) {
     const text = t.post.content || '';
     const hashtags = text.match(/#\w+/g) || [];
+    const platformName = String(t.socialAccount?.platform || 'unknown').toLowerCase();
     const m = t.metrics[0];
     const engagement = m ? (m.likes || 0) + (m.comments || 0) + (m.shares || 0) : 0;
 
     for (const tag of hashtags) {
       const lower = tag.toLowerCase();
-      const existing = tagMap.get(lower) || { engagement: 0, count: 0 };
-      tagMap.set(lower, {
+      const key = `${platformName}:${lower}`;
+      const existing = tagMap.get(key) || { engagement: 0, count: 0, platform: platformName };
+      tagMap.set(key, {
         engagement: existing.engagement + engagement,
         count: existing.count + 1,
+        platform: existing.platform,
       });
     }
   }
 
   return Array.from(tagMap.entries())
-    .map(([tag, v]) => ({
-      tag,
+    .map(([key, v]) => ({
+      tag: key.split(':').slice(1).join(':'),
       avgEngagement: Math.round(v.engagement / v.count),
       count: v.count,
+      platform: v.platform,
     }))
     .sort((a, b) => b.avgEngagement - a.avgEngagement)
     .slice(0, limit);

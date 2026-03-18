@@ -80,17 +80,18 @@ export async function GET(req: NextRequest) {
       parseInt(searchParams.get('days') || '30'),
       maxDays
     );
+    const requestedPlatform = (searchParams.get('platform') || '').trim().toLowerCase() || undefined;
 
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - requestedDays);
 
     const [overview, heatmap, contentTypes, platforms, hashtags] = await Promise.all([
-      getUserAnalytics(session.user.id, startDate, endDate),
-      getPostingHeatmap(session.user.id, startDate, endDate),
-      getContentTypePerformance(session.user.id, startDate, endDate),
-      getPlatformComparison(session.user.id, startDate, endDate),
-      getTopHashtags(session.user.id, startDate, endDate),
+      getUserAnalytics(session.user.id, startDate, endDate, requestedPlatform),
+      getPostingHeatmap(session.user.id, startDate, endDate, requestedPlatform),
+      getContentTypePerformance(session.user.id, startDate, endDate, requestedPlatform),
+      getPlatformComparison(session.user.id, startDate, endDate, requestedPlatform),
+      getTopHashtags(session.user.id, startDate, endDate, 20, requestedPlatform),
     ]);
 
     return NextResponse.json({

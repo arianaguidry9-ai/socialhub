@@ -92,13 +92,13 @@ function PlatformMetricCards({ platform, data }: { platform: string; data: any }
   return (
     <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
       {config.metrics.map((m) => {
-        const value = data?.[m.key] ?? Math.floor(Math.random() * 5000);
+        const value = data?.[m.key];
         return (
           <div key={m.key} className="flex items-center gap-3 rounded-lg border bg-muted/30 p-3">
             <m.icon className={`h-5 w-5 ${m.color}`} />
             <div>
               <p className="text-xs text-muted-foreground">{m.label}</p>
-              <p className="text-lg font-bold">{value.toLocaleString()}</p>
+              <p className="text-lg font-bold">{typeof value === 'number' ? value.toLocaleString() : '—'}</p>
             </div>
           </div>
         );
@@ -261,10 +261,35 @@ export default function AnalyticsPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[
-          { title: 'Total Impressions', value: data?.overview?.totalImpressions },
-          { title: 'Total Engagement', value: data?.overview?.totalEngagement },
-          { title: 'Avg CTR', value: data?.overview?.avgCTR ? `${data.overview.avgCTR}%` : undefined },
-          { title: 'Posts Published', value: data?.overview?.totalPosts },
+          {
+            title: 'Total Impressions',
+            value:
+              data?.overview?.totalImpressions ??
+              (typeof liveTwitter?.profile?.followers === 'number'
+                ? `${liveTwitter.profile.followers.toLocaleString()} reach`
+                : undefined),
+          },
+          {
+            title: 'Total Engagement',
+            value:
+              data?.overview?.totalEngagement ??
+              (liveTwitter?.totals
+                ? liveTwitter.totals.likes + liveTwitter.totals.retweets + liveTwitter.totals.replies
+                : undefined),
+          },
+          {
+            title: 'Avg CTR',
+            value:
+              data?.overview?.avgCTR != null
+                ? `${data.overview.avgCTR}%`
+                : (liveTwitter?.totals && liveTwitter?.profile?.followers
+                    ? `${((liveTwitter.totals.likes + liveTwitter.totals.retweets + liveTwitter.totals.replies) / liveTwitter.profile.followers * 100).toFixed(1)}%`
+                    : undefined),
+          },
+          {
+            title: 'Posts Published',
+            value: data?.overview?.totalPosts ?? liveTwitter?.profile?.tweetCount,
+          },
         ].map((stat) => (
           <Card key={stat.title}>
             <CardHeader className="pb-2">
@@ -272,7 +297,11 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-2xl font-bold">
-                {isLoading ? '...' : stat.value?.toLocaleString() ?? '—'}
+                {isLoading
+                  ? '...'
+                  : typeof stat.value === 'number'
+                    ? stat.value.toLocaleString()
+                    : (stat.value ?? '—')}
               </p>
             </CardContent>
           </Card>

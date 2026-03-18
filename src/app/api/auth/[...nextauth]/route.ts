@@ -17,7 +17,19 @@ import { LINK_COOKIE_NAME, verifyLinkCookie } from '@/lib/auth/link-cookie';
 async function handler(req: NextRequest, context: unknown) {
   const rawCookie = req.cookies.get(LINK_COOKIE_NAME)?.value ?? null;
   const pendingLinkUserId = verifyLinkCookie(rawCookie);
-  return NextAuth(buildAuthOptions(pendingLinkUserId))(req as never, context);
+
+  // Log callback requests for debugging
+  const { pathname, searchParams } = req.nextUrl;
+  if (pathname.includes('/callback/')) {
+    console.log('[auth] callback hit:', pathname, 'code:', searchParams.get('code') ? 'present' : 'absent', 'error:', searchParams.get('error') ?? 'none');
+  }
+
+  try {
+    return await NextAuth(buildAuthOptions(pendingLinkUserId))(req as never, context);
+  } catch (err) {
+    console.error('[auth] NextAuth handler error:', err);
+    throw err;
+  }
 }
 
 export { handler as GET, handler as POST };

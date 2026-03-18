@@ -249,7 +249,9 @@ export function buildAuthOptions(pendingLinkUserId?: string | null): NextAuthOpt
         ]
       : []),
 
-    // ─── Twitter / X OAuth2 (optional) ────────────────────────────
+    // ─── Twitter / X OAuth 2.0 (optional) ─────────────────────────
+    // Uses OAuth 2.0 with PKCE which hits v2 endpoints (works on Free tier).
+    // Requires a real HTTPS callback URL (deploy to Netlify/Vercel).
     ...(process.env.TWITTER_CLIENT_ID
       ? [
           TwitterProvider({

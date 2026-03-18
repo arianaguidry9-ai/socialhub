@@ -66,9 +66,35 @@ export default function DashboardPage() {
       {/* Stats Grid */}
       <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         {[
-          { title: 'Total Posts', value: stats?.totalPosts ?? '—', icon: Calendar, color: 'text-blue-500' },
-          { title: 'Impressions', value: stats?.totalImpressions?.toLocaleString() ?? '—', icon: TrendingUp, color: 'text-green-500' },
-          { title: 'Engagement', value: stats?.totalEngagement?.toLocaleString() ?? '—', icon: BarChart3, color: 'text-purple-500' },
+          {
+            title: 'Total Posts',
+            value:
+              stats?.totalPosts ??
+              liveTwitter?.profile?.tweetCount ??
+              '—',
+            icon: Calendar,
+            color: 'text-blue-500',
+          },
+          {
+            title: 'Impressions',
+            value:
+              stats?.totalImpressions ??
+              (typeof liveTwitter?.profile?.followers === 'number'
+                ? `${liveTwitter.profile.followers.toLocaleString()} reach`
+                : '—'),
+            icon: TrendingUp,
+            color: 'text-green-500',
+          },
+          {
+            title: 'Engagement',
+            value:
+              stats?.totalEngagement ??
+              (liveTwitter?.totals
+                ? liveTwitter.totals.likes + liveTwitter.totals.retweets + liveTwitter.totals.replies
+                : '—'),
+            icon: BarChart3,
+            color: 'text-purple-500',
+          },
           { title: 'Accounts', value: Array.isArray(data?.accounts) ? data.accounts.length : '—', icon: Users, color: 'text-orange-500' },
         ].map((stat) => (
           <Card key={stat.title} className="glass-card-hover">
@@ -79,7 +105,7 @@ export default function DashboardPage() {
               <stat.icon className={`h-5 w-5 ${stat.color}`} />
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">{isLoading ? '...' : stat.value}</p>
+              <p className="text-3xl font-bold">{isLoading ? '...' : (typeof stat.value === 'number' ? stat.value.toLocaleString() : stat.value)}</p>
             </CardContent>
           </Card>
         ))}
