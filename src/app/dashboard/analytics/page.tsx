@@ -137,9 +137,105 @@ export default function AnalyticsPage() {
     window.open(`/api/analytics/export?days=${days}${platform !== 'all' ? `&platform=${platform}` : ''}`, '_blank');
   };
 
+  const liveTweetCount = liveTwitter?.recentTweets?.length ?? 0;
+  const liveEngagementTotal = liveTwitter?.totals
+    ? (liveTwitter.totals.likes ?? 0) + (liveTwitter.totals.retweets ?? 0) + (liveTwitter.totals.replies ?? 0)
+    : 0;
+
+  const livePlatformFallback =
+    !data?.platforms?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+      ? [
+          {
+            platform: 'twitter',
+            totalPosts: liveTweetCount,
+            avgEngagement: Math.round(liveEngagementTotal / Math.max(liveTweetCount, 1)),
+            avgImpressions: typeof liveTwitter?.profile?.followers === 'number' ? liveTwitter.profile.followers : 0,
+          },
+        ]
+      : [];
+
+  const liveContentFallback =
+    !data?.contentTypes?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+      ? [
+          {
+            type: 'text',
+            avgEngagement: Math.round(liveEngagementTotal / Math.max(liveTweetCount, 1)),
+            avgImpressions: 0,
+            postCount: liveTweetCount,
+            platform: 'twitter',
+          },
+        ]
+      : [];
+
+  const liveHeatmapFallback =
+    !data?.heatmap?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+      ? liveTwitter.recentTweets.reduce((acc: any[], t: any) => {
+          if (!t.createdAt) return acc;
+          const dt = new Date(t.createdAt);
+          const dayOfWeek = dt.getUTCDay();
+          const hour = dt.getUTCHours();
+          const engagement = (t.likes ?? 0) + (t.retweets ?? 0) + (t.replies ?? 0);
+          const existing = acc.find((c) => c.dayOfWeek === dayOfWeek && c.hour === hour && c.platform === 'twitter');
+          if (existing) {
+            existing._sum += engagement;
+            existing.postCount += 1;
+            existing.avgEngagement = Math.round(existing._sum / existing.postCount);
+            return acc;
+          }
+          acc.push({
+            dayOfWeek,
+            hour,
+            avgEngagement: engagement,
+            postCount: 1,
+            platform: 'twitter',
+            _sum: engagement,
+          });
+          return acc;
+        }, [])
+      : [];
+
+  const liveHashtagFallback =
+    !data?.hashtags?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+      ? (() => {
+          const map = new Map<string, { engagement: number; count: number }>();
+          for (const t of liveTwitter.recentTweets) {
+            const tags = String(t.text || '').match(/#\w+/g) || [];
+            const engagement = (t.likes ?? 0) + (t.retweets ?? 0) + (t.replies ?? 0);
+            for (const tag of tags) {
+              const key = tag.toLowerCase();
+              const existing = map.get(key) || { engagement: 0, count: 0 };
+              map.set(key, {
+                engagement: existing.engagement + engagement,
+                count: existing.count + 1,
+              });
+            }
+          }
+          return Array.from(map.entries())
+            .map(([tag, v]) => ({
+              tag,
+              avgEngagement: Math.round(v.engagement / Math.max(v.count, 1)),
+              count: v.count,
+              platform: 'twitter',
+            }))
+            .sort((a, b) => b.avgEngagement - a.avgEngagement)
+            .slice(0, 20);
+        })()
+      : [];
+
+  const platformData = data?.platforms?.length ? data.platforms : livePlatformFallback;
+  const contentTypeData = data?.contentTypes?.length ? data.contentTypes : liveContentFallback;
+  const heatmapData = data?.heatmap?.length ? data.heatmap : liveHeatmapFallback.map((c: any) => ({
+    dayOfWeek: c.dayOfWeek,
+    hour: c.hour,
+    avgEngagement: c.avgEngagement,
+    postCount: c.postCount,
+    platform: c.platform,
+  }));
+  const hashtagData = data?.hashtags?.length ? data.hashtags : liveHashtagFallback;
+
   const filteredPlatforms = platform === 'all'
-    ? data?.platforms
-    : data?.platforms?.filter((p: any) => p.platform?.toLowerCase() === platform);
+    ? platformData
+    : platformData?.filter((p: any) => p.platform?.toLowerCase() === platform);
 
   /* Per-section filtering helpers */
   const filterByPlatform = (items: any[] | undefined, plat: string, platformKey = 'platform') => {
@@ -352,7 +448,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               {(() => {
-                const items = filterByPlatform(data?.contentTypes, contentPlatform, 'platform');
+                const items = filterByPlatform(contentTypeData, contentPlatform, 'platform');
                 const config = PLATFORM_METRICS[contentPlatform];
 
                 /* Platform-specific metric cards */
@@ -420,7 +516,7 @@ export default function AnalyticsPage() {
             </CardHeader>
             <CardContent>
               {(() => {
-                const items = filterByPlatform(data?.heatmap, heatmapPlatform, 'platform');
+                const items = filterByPlatform(heatmapData, heatmapPlatform, 'platform');
                 const config = PLATFORM_METRICS[heatmapPlatform];
 
                 /* Platform-specific metric cards above heatmap */
@@ -506,7 +602,7 @@ export default function AnalyticsPage() {
             <CardContent>
               {(() => {
                 const isReddit = hashtagPlatform === 'reddit';
-                const sourceItems = isReddit ? data?.flairs : data?.hashtags;
+                const sourceItems = isReddit ? data?.flairs : hashtagData;
                 const items = filterByPlatform(sourceItems, hashtagPlatform, 'platform');
                 const config = PLATFORM_METRICS[hashtagPlatform];
 
