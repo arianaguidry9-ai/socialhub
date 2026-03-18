@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectItem } from '@/components/ui/select';
 import { PlatformFilterTabs, PlatformEmptyState } from '@/components/analytics/PlatformFilterTabs';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
-import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2, Users, UserCheck, FileText, BookMarked, MessageCircle } from 'lucide-react';
+import { Download, TrendingUp, ArrowUp, ArrowDown, Eye, Heart, MessageSquare, Share2, ThumbsUp, Repeat2, Users, UserCheck, FileText, BookMarked, MessageCircle, AlertTriangle } from 'lucide-react';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -126,11 +126,19 @@ export default function AnalyticsPage() {
 
   // Live data from the connected platform (Twitter right now)
   const showLiveTwitter = platform === 'all' || platform === 'twitter';
-  const { data: liveTwitter, isLoading: liveLoading } = useQuery({
+  const { data: liveTwitter, isLoading: liveLoading, isError: liveError } = useQuery({
     queryKey: ['live-twitter'],
-    queryFn: () => fetch('/api/analytics/platform?platform=twitter').then((r) => r.json()),
+    queryFn: async () => {
+      const res = await fetch('/api/analytics/platform?platform=twitter');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
     enabled: showLiveTwitter,
     staleTime: 2 * 60 * 1000,
+    retry: 2,
   });
 
   const handleExport = () => {
@@ -142,33 +150,37 @@ export default function AnalyticsPage() {
     ? (liveTwitter.totals.likes ?? 0) + (liveTwitter.totals.retweets ?? 0) + (liveTwitter.totals.replies ?? 0)
     : 0;
 
+  // True when the user has actually published posts through SocialHub
+  const hasSocialHubData = (data?.overview?.totalPosts ?? 0) > 0;
+
+  // Platforms tab: only needs profile data, not recent tweets
   const livePlatformFallback =
-    !data?.platforms?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+    !data?.platforms?.length && showLiveTwitter && liveTwitter?.profile
       ? [
           {
             platform: 'twitter',
-            totalPosts: liveTweetCount,
-            avgEngagement: Math.round(liveEngagementTotal / Math.max(liveTweetCount, 1)),
-            avgImpressions: typeof liveTwitter?.profile?.followers === 'number' ? liveTwitter.profile.followers : 0,
+            totalPosts: liveTwitter.profile.tweetCount ?? liveTweetCount,
+            avgEngagement: liveTweetCount > 0 ? Math.round(liveEngagementTotal / Math.max(liveTweetCount, 1)) : 0,
+            avgImpressions: typeof liveTwitter.profile.followers === 'number' ? liveTwitter.profile.followers : 0,
           },
         ]
       : [];
 
   const liveContentFallback =
-    !data?.contentTypes?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+    !data?.contentTypes?.length && showLiveTwitter && liveTweetCount > 0
       ? [
           {
             type: 'text',
             avgEngagement: Math.round(liveEngagementTotal / Math.max(liveTweetCount, 1)),
             avgImpressions: 0,
-            postCount: liveTweetCount,
+            count: liveTweetCount,
             platform: 'twitter',
           },
         ]
       : [];
 
   const liveHeatmapFallback =
-    !data?.heatmap?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+    !data?.heatmap?.length && showLiveTwitter && liveTweetCount > 0
       ? liveTwitter.recentTweets.reduce((acc: any[], t: any) => {
           if (!t.createdAt) return acc;
           const dt = new Date(t.createdAt);
@@ -195,7 +207,7 @@ export default function AnalyticsPage() {
       : [];
 
   const liveHashtagFallback =
-    !data?.hashtags?.length && showLiveTwitter && !liveTwitter?.error && liveTweetCount > 0
+    !data?.hashtags?.length && showLiveTwitter && liveTweetCount > 0
       ? (() => {
           const map = new Map<string, { engagement: number; count: number }>();
           for (const t of liveTwitter.recentTweets) {
@@ -359,32 +371,31 @@ export default function AnalyticsPage() {
         {[
           {
             title: 'Total Impressions',
-            value:
-              data?.overview?.totalImpressions ??
-              (typeof liveTwitter?.profile?.followers === 'number'
+            value: hasSocialHubData
+              ? data.overview.totalImpressions
+              : (typeof liveTwitter?.profile?.followers === 'number'
                 ? `${liveTwitter.profile.followers.toLocaleString()} reach`
                 : undefined),
           },
           {
             title: 'Total Engagement',
-            value:
-              data?.overview?.totalEngagement ??
-              (liveTwitter?.totals
-                ? liveTwitter.totals.likes + liveTwitter.totals.retweets + liveTwitter.totals.replies
-                : undefined),
+            value: hasSocialHubData
+              ? data.overview.totalEngagement
+              : (liveEngagementTotal > 0 ? liveEngagementTotal : undefined),
           },
           {
             title: 'Avg CTR',
-            value:
-              data?.overview?.avgCTR != null
-                ? `${data.overview.avgCTR}%`
-                : (liveTwitter?.totals && liveTwitter?.profile?.followers
-                    ? `${((liveTwitter.totals.likes + liveTwitter.totals.retweets + liveTwitter.totals.replies) / liveTwitter.profile.followers * 100).toFixed(1)}%`
-                    : undefined),
+            value: hasSocialHubData
+              ? `${data.overview.avgCTR ?? 0}%`
+              : (liveEngagementTotal > 0 && liveTwitter?.profile?.followers
+                  ? `${(liveEngagementTotal / liveTwitter.profile.followers * 100).toFixed(1)}%`
+                  : undefined),
           },
           {
             title: 'Posts Published',
-            value: data?.overview?.totalPosts ?? liveTwitter?.profile?.tweetCount,
+            value: hasSocialHubData
+              ? data.overview.totalPosts
+              : liveTwitter?.profile?.tweetCount,
           },
         ].map((stat) => (
           <Card key={stat.title}>
@@ -403,6 +414,16 @@ export default function AnalyticsPage() {
           </Card>
         ))}
       </div>
+
+      {liveError && showLiveTwitter && !data?.platforms?.length && (
+        <div className="flex items-center gap-2 rounded-lg border border-yellow-300 bg-yellow-50 p-3 dark:border-yellow-700 dark:bg-yellow-950/30">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-600" />
+          <span className="text-sm text-yellow-800 dark:text-yellow-200">
+            Unable to fetch live Twitter data — the API may be rate-limited or your token has expired.
+            Try refreshing in a few minutes, or reconnect your account.
+          </span>
+        </div>
+      )}
 
       <Tabs defaultValue="platforms">
         <TabsList>
