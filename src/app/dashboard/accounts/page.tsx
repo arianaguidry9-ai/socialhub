@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { signIn } from 'next-auth/react';
+import { createClient } from '@/utils/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -95,21 +95,28 @@ export default function AccountsPage() {
     setAddDialogOpen(false);
     setLinkStatus(null);
 
-    // Signal to the auth adapter that this is a "connect" (add to existing
-    // user) rather than a fresh sign-in.  The endpoint sets a short-lived,
-    // signed httpOnly cookie that the NextAuth route handler picks up during
-    // the OAuth callback to link to the current user instead of creating a
-    // new one.
-    try {
-      await fetch('/api/accounts/link-start');
-    } catch {
-      // Non-fatal — proceed; worst case: a duplicate user is not created
-      // because our adapter still does e-mail deduplication as a fallback.
-    }
+    // Use Supabase OAuth to connect the social account
+    const supabase = createClient();
+    const providerMap: Record<string, string> = {
+      twitter: 'twitter',
+      google: 'google',
+      facebook: 'facebook',
+      linkedin: 'linkedin_oidc',
+      reddit: 'reddit' as any,
+      instagram: 'instagram' as any,
+    };
+    const provider = providerMap[platformId] ?? platformId;
 
-    // callbackUrl carries the provider name back so the useEffect above
-    // can call POST /api/accounts/link to sync the socialAccounts record.
-    signIn(platformId, { callbackUrl: `/dashboard/accounts?linked=${platformId}` });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: provider as any,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/accounts?linked=${platformId}`,
+      },
+    });
+
+    if (error) {
+      setLinkStatus({ type: 'error', message: error.message });
+    }
   };
 
   return (

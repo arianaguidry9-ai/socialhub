@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from './options';
+import { createClient } from '@/utils/supabase/server';
 import { usersRef } from '@/lib/db';
 import type { UserPlan } from '@/types';
 
@@ -22,7 +21,27 @@ export async function getSession() {
   if (process.env.DEBUG_AUTH === 'true') {
     return DEBUG_SESSION;
   }
-  return getServerSession(authOptions);
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // Look up Firestore user record for plan/timezone
+  const snap = await usersRef.doc(user.id).get();
+  const firestoreUser = snap.data();
+
+  return {
+    user: {
+      id: user.id,
+      name: user.user_metadata?.full_name ?? user.user_metadata?.name ?? user.email?.split('@')[0] ?? 'User',
+      email: user.email ?? '',
+      image: user.user_metadata?.avatar_url ?? null,
+      plan: firestoreUser?.plan ?? 'FREE',
+      timezone: firestoreUser?.timezone ?? 'UTC',
+    },
+    expires: new Date(Date.now() + 86400_000).toISOString(),
+  };
 }
 
 /** Get the current user from the session or throw 401. */

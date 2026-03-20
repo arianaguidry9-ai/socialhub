@@ -1,6 +1,7 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useState, useEffect } from 'react';
+import { createClient } from '@/utils/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +19,26 @@ const premiumFeatures = [
 ];
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const plan = (session?.user as any)?.plan || 'FREE';
+  const [user, setUser] = useState<{ name?: string; email?: string; plan?: string } | null>(null);
   const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      if (u) {
+        setUser({
+          name: u.user_metadata?.full_name ?? u.user_metadata?.name ?? u.email?.split('@')[0],
+          email: u.email,
+        });
+      }
+    });
+    // Fetch plan from API
+    fetch('/api/accounts/me').then(r => r.json()).then(data => {
+      if (data?.plan) setUser(prev => prev ? { ...prev, plan: data.plan } : prev);
+    }).catch(() => {});
+  }, []);
+
+  const plan = user?.plan || 'FREE';
 
   const handleUpgrade = async () => {
     const res = await fetch('/api/stripe/checkout', { method: 'POST' });
@@ -117,11 +135,11 @@ export default function SettingsPage() {
         <CardContent className="space-y-3">
           <div>
             <p className="text-sm text-muted-foreground">Name</p>
-            <p className="font-medium">{session?.user?.name || '—'}</p>
+            <p className="font-medium">{user?.name || '—'}</p>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Email</p>
-            <p className="font-medium">{session?.user?.email || '—'}</p>
+            <p className="font-medium">{user?.email || '—'}</p>
           </div>
         </CardContent>
       </Card>

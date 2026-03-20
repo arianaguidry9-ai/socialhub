@@ -146,7 +146,7 @@ async function processEmailNotifyJob(data: { userId: string; postTargetId: strin
         <p>Hi ${user.name || 'there'},</p>
         <p>Unfortunately, one of your scheduled posts failed to publish.</p>
         <p><strong>Error:</strong> ${error}</p>
-        <p>You can review and retry from your <a href="${process.env.NEXTAUTH_URL}/dashboard/queue">queue dashboard</a>.</p>
+        <p>You can review and retry from your <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/queue">queue dashboard</a>.</p>
         <p>— The SocialHub Team</p>
       `,
     });

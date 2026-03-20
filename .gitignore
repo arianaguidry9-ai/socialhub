@@ -12,3 +12,5 @@ src-tauri/target/
 
 # Local Netlify folder
 .netlify
+
+.vercel

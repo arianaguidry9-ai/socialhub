@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
+import { createClient } from '@/utils/supabase/client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useAppStore } from '@/store/app';
@@ -35,31 +35,39 @@ const navigation = [
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];
 
-const isDebug = process.env.NEXT_PUBLIC_DEBUG_AUTH === 'true';
-
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { data: session } = useSession();
   const { sidebarOpen, toggleSidebar } = useAppStore();
   const { resolved, setTheme } = useTheme();
-  // Prevent hydration mismatch: useSession and useTheme return different values
-  // on the server vs the client. Only render user-specific content after mount.
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [user, setUser] = useState<{ name?: string; email?: string; plan?: string } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user: u } }) => {
+      if (u) {
+        setUser({
+          name: u.user_metadata?.full_name ?? u.user_metadata?.name ?? u.email?.split('@')[0],
+          email: u.email,
+        });
+      }
+    });
+    // Also fetch plan from our API
+    fetch('/api/accounts/me').then(r => r.json()).then(data => {
+      if (data?.plan) setUser(prev => prev ? { ...prev, plan: data.plan } : prev);
+    }).catch(() => {});
+  }, []);
 
   const closeSidebarOnMobile = () => {
     if (window.innerWidth < 1024 && sidebarOpen) toggleSidebar();
   };
 
-  const handleSignOut = () => {
-    if (isDebug) {
-      sessionStorage.removeItem('socialhub-debug-logged-in');
-      window.dispatchEvent(new Event('debug-auth-change'));
-      router.push('/login');
-    } else {
-      signOut({ callbackUrl: '/login' });
-    }
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
   };
 
   return (
@@ -111,7 +119,7 @@ export function Sidebar() {
 
         {/* Bottom section */}
         <div className="border-t border-border/40 p-5">
-          {(session?.user as any)?.plan !== 'PREMIUM' && (
+          {user?.plan !== 'PREMIUM' && (
             <Link
               href="/dashboard/settings?tab=billing"
               className="mb-4 flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-amber-500/20"
@@ -124,11 +132,11 @@ export function Sidebar() {
           {/* User + Sign Out */}
           <div className="mb-4 flex items-center gap-3 rounded-xl px-3 py-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-sm font-bold text-primary">
-              {mounted ? (session?.user?.name?.charAt(0) ?? '?') : '?'}
+              {mounted ? (user?.name?.charAt(0) ?? '?') : '?'}
             </div>
             <div className="flex-1 truncate">
-              <p className="text-sm font-medium">{mounted ? (session?.user?.name ?? 'User') : 'User'}</p>
-              <p className="text-xs text-muted-foreground">{mounted ? session?.user?.email : ''}</p>
+              <p className="text-sm font-medium">{mounted ? (user?.name ?? 'User') : 'User'}</p>
+              <p className="text-xs text-muted-foreground">{mounted ? user?.email : ''}</p>
             </div>
             <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-9 w-9">
               <LogOut className="h-4 w-4" />
